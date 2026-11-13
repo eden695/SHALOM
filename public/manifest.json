@@ -1,10 +1,10 @@
 {
-  "id": "/",
+  "id": "./",
   "name": "SHALOM - Plateforme Chrétienne",
   "short_name": "SHALOM",
-  "description": "La foi au quotidien, la paix dans la communion. Plateforme chrétienne pour la vie spirituelle et l'organisation d'église.",
-  "start_url": "/",
-  "scope": "/",
+  "description": "La foi au quotidien, la paix dans le cœur. Compagnon chrétien personnel hors-ligne pour vos prières, témoignages et méditations.",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#070e20",
@@ -12,19 +12,19 @@
   "categories": ["lifestyle", "productivity", "utilities"],
   "icons": [
     {
-      "src": "/shalom_logo.jpg",
+      "src": "./shalom_logo.jpg",
       "sizes": "192x192",
       "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "/shalom_logo.jpg",
+      "src": "./shalom_logo.jpg",
       "sizes": "512x512",
       "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "/icon.png",
+      "src": "./icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

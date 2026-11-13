@@ -51,7 +51,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <div className="w-10 h-10 rounded-xl overflow-hidden border border-amber-400/40 bg-[#0b1f42] shrink-0 shadow-xs">
             <img
-              src="/shalom_logo.jpg"
+              src="./shalom_logo.jpg"
               alt="SHALOM"
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover scale-[1.06]"

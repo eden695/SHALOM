@@ -35,7 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label="Accueil SHALOM"
           >
             <img
-              src="/shalom_logo.jpg"
+              src="./shalom_logo.jpg"
               alt="SHALOM"
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover scale-[1.06]"

@@ -1,11 +1,11 @@
 // Service Worker for SHALOM - Offline Christian Companion (Network-First)
-const CACHE_NAME = 'shalom-cache-v3';
+const CACHE_NAME = 'shalom-cache-v4';
 const ASSETS_TO_CACHE = [
-  '/shalom_logo.jpg',
-  '/shalom_logo_520x520.png',
-  '/shalom_logo_520x520.jpg',
-  '/icon.png',
-  '/manifest.json',
+  './shalom_logo.jpg',
+  './shalom_logo_520x520.png',
+  './shalom_logo_520x520.jpg',
+  './icon.png',
+  './manifest.json',
 ];
 
 self.addEventListener('install', (event) => {
@@ -43,10 +43,10 @@ self.addEventListener('fetch', (event) => {
 
   // Never intercept Vite dev/HMR endpoints
   if (
-    url.pathname.startsWith('/@vite') ||
-    url.pathname.startsWith('/@react-refresh') ||
-    url.pathname.startsWith('/src/') ||
-    url.pathname.startsWith('/node_modules/')
+    url.pathname.includes('/@vite') ||
+    url.pathname.includes('/@react-refresh') ||
+    url.pathname.includes('/src/') ||
+    url.pathname.includes('/node_modules/')
   ) {
     return;
   }
@@ -65,7 +65,7 @@ self.addEventListener('fetch', (event) => {
         const cached = await caches.match(event.request);
         if (cached) return cached;
         if (event.request.mode === 'navigate') {
-          const fallback = await caches.match('/index.html');
+          const fallback = await caches.match('./index.html');
           if (fallback) return fallback;
         }
         return Response.error();

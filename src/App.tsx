@@ -102,7 +102,7 @@ export default function App() {
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#f7f8fa] dark:bg-[#060d1d] text-slate-800 dark:text-slate-100 p-4">
         <div className="w-16 h-16 rounded-2xl overflow-hidden border-2 border-amber-400/50 shadow-xl mb-4 animate-pulse">
           <img
-            src="/shalom_logo.jpg"
+            src="./shalom_logo.jpg"
             alt="SHALOM"
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover scale-[1.06]"

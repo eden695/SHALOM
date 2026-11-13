@@ -245,7 +245,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   const handleDownloadLogo = async (format: 'png' | 'jpg') => {
     const fileName = `shalom_logo_520x520.${format}`;
     try {
-      const response = await fetch(`/${fileName}`);
+      const response = await fetch(`./${fileName}`);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -365,7 +365,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
             <div className="flex flex-col sm:flex-row items-center gap-4">
               <div className="w-24 h-24 rounded-2xl overflow-hidden shadow-md border border-slate-200/70 dark:border-slate-700/70 shrink-0 bg-slate-100 dark:bg-slate-900">
                 <img
-                  src="/shalom_logo_520x520.png"
+                  src="./shalom_logo_520x520.png"
                   alt="Logo SHALOM 520x520"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-contain"
