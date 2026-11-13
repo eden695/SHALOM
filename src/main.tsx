@@ -41,6 +41,8 @@ class AppErrorBoundary extends React.Component<
   }
 }
 
+(window as unknown as { __SHALOM_BOOTED__?: boolean }).__SHALOM_BOOTED__ = true;
+
 createRoot(document.getElementById('root')!).render(
   <AppErrorBoundary>
     <App />

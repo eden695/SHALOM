@@ -103,9 +103,11 @@ export default function App() {
   };
 
   const [campaignContacts, setCampaignContacts] = useState<Contact[] | undefined>(undefined);
+  const [campaignMessage, setCampaignMessage] = useState<string | undefined>(undefined);
 
-  const handleStartCampaignWithContacts = (targetContacts: Contact[]) => {
+  const handleStartCampaignWithContacts = (targetContacts: Contact[], initialMsg?: string) => {
     setCampaignContacts(targetContacts);
+    setCampaignMessage(initialMsg);
     handleSelectTab('messaging');
   };
 
@@ -167,8 +169,9 @@ export default function App() {
 
           {activeTab === 'prayers' && (
             <PrayerModule
-              onShareWithContacts={(recipients) => {
+              onShareWithContacts={(recipients, text) => {
                 setCampaignContacts(recipients);
+                setCampaignMessage(text);
                 handleSelectTab('messaging');
               }}
               onOpenWhatsAppShare={(text: string) => {
@@ -189,8 +192,10 @@ export default function App() {
           {activeTab === 'messaging' && (
             <MessagingModule
               initialContacts={campaignContacts}
+              initialMessage={campaignMessage}
               onClose={() => {
                 setCampaignContacts(undefined);
+                setCampaignMessage(undefined);
                 handleSelectTab('dashboard');
               }}
             />

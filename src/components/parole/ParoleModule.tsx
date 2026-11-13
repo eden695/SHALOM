@@ -20,6 +20,8 @@ import {
   Camera,
   X,
   Image as ImageIcon,
+  CheckSquare,
+  Square as CheckboxEmpty,
 } from 'lucide-react';
 import { MediaRecordingManager, RecorderState } from '../../services/audioVideoRecorder';
 import { dbService, STORES } from '../../services/db';
@@ -93,14 +95,19 @@ export const ParoleModule: React.FC = () => {
   const audioPhotoVideoRef = useRef<HTMLVideoElement | null>(null);
   const audioPhotoStreamRef = useRef<MediaStream | null>(null);
 
-  // Delete modal
+  // Delete & Bulk Selection modals
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedParoleIds, setSelectedParoleIds] = useState<string[]>([]);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
 
   // Storage info
-  const [storageInfo, setStorageInfo] = useState<{ usageMB: number; quotaMB: number }>({
+  const [storageInfo, setStorageInfo] = useState<{ usageMB: number; quotaMB: number; persisted?: boolean }>({
     usageMB: 0,
     quotaMB: 0,
+    persisted: false,
   });
+
+  const formatQuota = (mb: number) => (mb >= 1024 ? `${(mb / 1024).toFixed(1)} Go` : `${mb} Mo`);
 
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
   const recorderManagerRef = useRef<MediaRecordingManager | null>(null);
@@ -502,19 +509,55 @@ export const ParoleModule: React.FC = () => {
   const handleConfirmDelete = async () => {
     if (!deletingId) return;
     const item = recordings.find((r) => r.id === deletingId);
-    if (item && item.blobKey) {
-      await dbService.deleteItem(STORES.MEDIA_BLOBS, item.blobKey);
-    }
-    if (item?.photoBlobKeys) {
-      for (const pKey of item.photoBlobKeys) {
-        await dbService.deleteItem(STORES.MEDIA_BLOBS, pKey);
-      }
+    const blobsToDelete: string[] = [];
+    if (item?.blobKey) blobsToDelete.push(item.blobKey);
+    if (item?.photoBlobKeys) blobsToDelete.push(...item.photoBlobKeys);
+    if (blobsToDelete.length > 0) {
+      await dbService.deleteItems(STORES.MEDIA_BLOBS, blobsToDelete);
     }
     await dbService.deleteItem(STORES.RECORDINGS, deletingId);
+    setSelectedParoleIds((prev) => prev.filter((id) => id !== deletingId));
     setDeletingId(null);
     if (playingParole?.id === deletingId) {
       setPlayingParole(null);
     }
+    const info = await dbService.getStorageEstimate();
+    setStorageInfo({ usageMB: info.usageMB, quotaMB: info.quotaMB, persisted: info.persisted });
+    reloadData();
+  };
+
+  const handleToggleSelectParole = (id: string) => {
+    setSelectedParoleIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleAllFilteredParoles = () => {
+    const ids = filteredRecordings.map((r) => r.id);
+    const allSelected = ids.length > 0 && ids.every((id) => selectedParoleIds.includes(id));
+    setSelectedParoleIds(allSelected ? [] : ids);
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedParoleIds.length === 0) return;
+    const blobsToDelete: string[] = [];
+    recordings.forEach((r) => {
+      if (selectedParoleIds.includes(r.id)) {
+        if (r.blobKey) blobsToDelete.push(r.blobKey);
+        if (r.photoBlobKeys) blobsToDelete.push(...r.photoBlobKeys);
+      }
+    });
+    if (blobsToDelete.length > 0) {
+      await dbService.deleteItems(STORES.MEDIA_BLOBS, blobsToDelete);
+    }
+    await dbService.deleteItems(STORES.RECORDINGS, selectedParoleIds);
+    if (playingParole && selectedParoleIds.includes(playingParole.id)) {
+      setPlayingParole(null);
+    }
+    setSelectedParoleIds([]);
+    setIsBulkDeleteOpen(false);
+    const info = await dbService.getStorageEstimate();
+    setStorageInfo({ usageMB: info.usageMB, quotaMB: info.quotaMB, persisted: info.persisted });
     reloadData();
   };
 
@@ -572,7 +615,7 @@ export const ParoleModule: React.FC = () => {
         <div className="flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
           <span>
-            Stockage local utilisé : <strong className="tabular-nums">{storageInfo.usageMB} Mo</strong> · Quota estimé : <strong className="tabular-nums">{storageInfo.quotaMB} Mo</strong>
+            Stockage local utilisé : <strong className="tabular-nums">{storageInfo.usageMB} Mo</strong> · Capacité disponible : <strong className="tabular-nums">{formatQuota(storageInfo.quotaMB)}</strong>
           </span>
         </div>
         <span className="text-[11px] text-amber-700 dark:text-amber-400 font-medium">
@@ -631,21 +674,69 @@ export const ParoleModule: React.FC = () => {
         </div>
       </div>
 
+      {/* Bulk Selection Bar */}
+      {filteredRecordings.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <button
+            type="button"
+            onClick={handleToggleAllFilteredParoles}
+            className="text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5 hover:text-blue-700"
+          >
+            {selectedParoleIds.length === filteredRecordings.length && filteredRecordings.length > 0 ? (
+              <CheckSquare className="w-4 h-4 text-blue-600" />
+            ) : (
+              <CheckboxEmpty className="w-4 h-4 text-slate-400" />
+            )}
+            <span>Tout sélectionner ({selectedParoleIds.length})</span>
+          </button>
+
+          {selectedParoleIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsBulkDeleteOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Supprimer la sélection ({selectedParoleIds.length})</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Recordings List */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredRecordings.map((parole) => {
           const activityObj = ACTIVITY_GENRES.find((a) => a.id === parole.activityGenre);
+          const isSelected = selectedParoleIds.includes(parole.id);
 
           return (
             <div
               key={parole.id}
-              className="p-5 rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200/80 dark:border-slate-800/80 flex flex-col justify-between space-y-4 hover:border-slate-300 dark:hover:border-slate-700 transition"
+              className={`p-5 rounded-2xl bg-white dark:bg-[#0c1631] border flex flex-col justify-between space-y-4 transition ${
+                isSelected
+                  ? 'border-blue-600 ring-2 ring-blue-600/20'
+                  : 'border-slate-200/80 dark:border-slate-800/80 hover:border-slate-300 dark:hover:border-slate-700'
+              }`}
             >
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span className="font-semibold text-blue-700 dark:text-blue-400 capitalize">
-                    {parole.type} · {parole.mediaType === 'video' ? 'Vidéo' : 'Audio'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSelectParole(parole.id)}
+                      aria-label="Sélectionner cet enregistrement"
+                      className="text-slate-400 hover:text-blue-600"
+                    >
+                      {isSelected ? (
+                        <CheckSquare className="w-4 h-4 text-blue-600" />
+                      ) : (
+                        <CheckboxEmpty className="w-4 h-4" />
+                      )}
+                    </button>
+                    <span className="font-semibold text-blue-700 dark:text-blue-400 capitalize">
+                      {parole.type} · {parole.mediaType === 'video' ? 'Vidéo' : 'Audio'}
+                    </span>
+                  </div>
                   <span className="tabular-nums">{parole.date}</span>
                 </div>
 
@@ -1301,6 +1392,16 @@ export const ParoleModule: React.FC = () => {
         isDestructive
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeletingId(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={isBulkDeleteOpen}
+        title="Supprimer les fichiers sélectionnés ?"
+        message={`Vous allez supprimer définitivement ${selectedParoleIds.length} enregistrement(s) (audio, vidéo et photos associés) pour libérer de la mémoire.`}
+        confirmLabel="Oui, supprimer en masse"
+        isDestructive
+        onConfirm={handleConfirmBulkDelete}
+        onCancel={() => setIsBulkDeleteOpen(false)}
       />
     </div>
   );

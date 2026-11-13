@@ -19,10 +19,12 @@ export function isNativeContactPickerSupported(): boolean {
 }
 
 export async function pickContactsFromDevice(
-  existingContacts: Contact[]
+  existingContacts: Contact[],
+  options?: { multiple?: boolean }
 ): Promise<PickContactsResult> {
   const nav = navigator as unknown as {
     contacts?: {
+      getProperties?: () => Promise<string[]>;
       select: (
         props: string[],
         opts: { multiple: boolean }
@@ -36,12 +38,27 @@ export async function pickContactsFromDevice(
       contacts: [],
       addedCount: 0,
       message:
-        'L’accès direct au répertoire natif est uniquement pris en charge sur Chrome/Android (ou application installée). Utilisez « Importer .vcf » (exporté depuis l’app Contacts de votre téléphone) ou ajoutez un contact manuellement.',
+        'Le sélecteur natif du répertoire dépend de Chrome/Android en fenêtre principale. Sélectionnez un fichier .vcf (exporté depuis l’app Contacts de votre téléphone) pour importer vos contacts.',
     };
   }
 
   try {
-    const picked = await nav.contacts.select(['name', 'tel', 'email'], { multiple: true });
+    let propsToRequest = ['name', 'tel'];
+    if (typeof nav.contacts.getProperties === 'function') {
+      try {
+        const supported = await nav.contacts.getProperties();
+        const desired = ['name', 'tel', 'email'].filter((p) => supported.includes(p));
+        if (desired.length > 0) {
+          propsToRequest = desired;
+        }
+      } catch {
+        propsToRequest = ['name', 'tel'];
+      }
+    }
+
+    const picked = await nav.contacts.select(propsToRequest, {
+      multiple: options?.multiple ?? true,
+    });
     if (!picked || picked.length === 0) {
       return { status: 'cancelled', contacts: [], addedCount: 0 };
     }
@@ -91,7 +108,7 @@ export async function pickContactsFromDevice(
       addedCount,
       message:
         selectedOrCreated.length > 0
-          ? `${selectedOrCreated.length} contact(s) sélectionné(s) depuis votre téléphone.`
+          ? `${selectedOrCreated.length} contact(s) sélectionné(s) depuis votre répertoire téléphonique.`
           : 'Aucun numéro de téléphone valide trouvé dans la sélection.',
     };
   } catch (err: unknown) {
@@ -107,7 +124,7 @@ export async function pickContactsFromDevice(
         contacts: [],
         addedCount: 0,
         message:
-          'Le navigateur bloque l’ouverture du répertoire depuis un aperçu intégré. Ouvrez le site directement dans votre navigateur ou utilisez « Importer .vcf ».',
+          'Cet aperçu intégré bloque l’ouverture directe de l’app Contacts. Ouvrez le site directement dans votre navigateur ou sélectionnez un fichier .vcf depuis votre téléphone.',
       };
     }
     return {

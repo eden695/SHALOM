@@ -7,6 +7,7 @@ import {
   PrayerGroup,
   Contact,
   CalendarActivity,
+  RecordedParole,
   MessageTemplate,
   UserProfile,
 } from '../types';
@@ -85,6 +86,7 @@ class ShalomDB {
         } catch (err) {
           console.warn('Seed warning:', err);
         }
+        this.requestPersistentStorage().catch(() => {});
         resolve(db);
       };
 
@@ -152,6 +154,31 @@ class ShalomDB {
     });
   }
 
+  async deleteItems(storeName: StoreName, ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const db = await this.openDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(storeName, 'readwrite');
+      const store = transaction.objectStore(storeName);
+      ids.forEach((id) => store.delete(id));
+      transaction.oncomplete = () => resolve(ids.length);
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  async requestPersistentStorage(): Promise<boolean> {
+    if (typeof navigator !== 'undefined' && navigator.storage && typeof navigator.storage.persist === 'function') {
+      try {
+        const already = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+        if (already) return true;
+        return await navigator.storage.persist();
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
   // Store Binary Media reliably as ArrayBuffer + mimeType
   async saveMediaBlob(id: string, blob: Blob, overrideMimeType?: string): Promise<string> {
     const buffer = await blob.arrayBuffer();
@@ -198,19 +225,55 @@ class ShalomDB {
     });
   }
 
-  async getStorageEstimate(): Promise<{ usageMB: number; quotaMB: number; percentage: number }> {
-    if (navigator.storage && navigator.storage.estimate) {
-      try {
-        const estimate = await navigator.storage.estimate();
-        const usageMB = Math.round(((estimate.usage || 0) / (1024 * 1024)) * 10) / 10;
-        const quotaMB = Math.round((estimate.quota || 0) / (1024 * 1024));
-        const percentage = quotaMB > 0 ? Math.min(100, Math.round((usageMB / quotaMB) * 100)) : 0;
-        return { usageMB, quotaMB, percentage };
-      } catch {
-        // fallback
+  async getStorageEstimate(): Promise<{
+    usageMB: number;
+    quotaMB: number;
+    percentage: number;
+    persisted: boolean;
+  }> {
+    let persisted = false;
+    if (typeof navigator !== 'undefined' && navigator.storage) {
+      if (typeof navigator.storage.persisted === 'function') {
+        try {
+          persisted = await navigator.storage.persisted();
+        } catch {
+          persisted = false;
+        }
+      }
+      if (navigator.storage.estimate) {
+        try {
+          const estimate = await navigator.storage.estimate();
+          const usageMB = Math.round(((estimate.usage || 0) / (1024 * 1024)) * 10) / 10;
+          const quotaMB = Math.round((estimate.quota || 0) / (1024 * 1024));
+          const percentage = quotaMB > 0 ? Math.min(100, Math.round((usageMB / quotaMB) * 100)) : 0;
+          return { usageMB, quotaMB, percentage, persisted };
+        } catch {
+          // fallback
+        }
       }
     }
-    return { usageMB: 1.0, quotaMB: 1000, percentage: 0.1 };
+    return { usageMB: 1.0, quotaMB: 1000, percentage: 0.1, persisted };
+  }
+
+  async purgeOrphanMediaBlobs(): Promise<number> {
+    const [recordings, testimonies, blobs] = await Promise.all([
+      this.getAll<RecordedParole>(STORES.RECORDINGS),
+      this.getAll<TestimonyItem>(STORES.TESTIMONIES),
+      this.getAll<{ id: string }>(STORES.MEDIA_BLOBS),
+    ]);
+    const activeKeys = new Set<string>();
+    recordings.forEach((r) => {
+      if (r.blobKey) activeKeys.add(r.blobKey);
+      r.photoBlobKeys?.forEach((k) => activeKeys.add(k));
+    });
+    testimonies.forEach((t) => {
+      if (t.mediaBlobKey) activeKeys.add(t.mediaBlobKey);
+    });
+    const orphanIds = blobs.map((b) => b.id).filter((id) => !activeKeys.has(id));
+    if (orphanIds.length > 0) {
+      await this.deleteItems(STORES.MEDIA_BLOBS, orphanIds);
+    }
+    return orphanIds.length;
   }
 
   async exportBackup(includeMediaBlobs = false): Promise<string> {

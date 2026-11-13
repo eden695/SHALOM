@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   HeartHandshake,
   Plus,
@@ -13,13 +13,13 @@ import {
   BookOpen,
   Users,
   Image as ImageIcon,
-  Video,
   CheckSquare,
   Square,
   Send,
   Smartphone,
   Upload,
   ExternalLink,
+  Download,
 } from 'lucide-react';
 import { dbService, STORES } from '../../services/db';
 import { pickContactsFromDevice, importContactsFromVcfOrCsv } from '../../services/phoneContacts';
@@ -140,15 +140,96 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
   const [evolutionPrayer, setEvolutionPrayer] = useState<PrayerItem | null>(null);
   const [evolutionNote, setEvolutionNote] = useState('');
 
-  // Delete confirmation
+  // Delete confirmation & Bulk Selection
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteType, setDeleteType] = useState<'prayer' | 'testimony'>('prayer');
+  const [selectedPrayerIds, setSelectedPrayerIds] = useState<string[]>([]);
+  const [selectedTestimonyIds, setSelectedTestimonyIds] = useState<string[]>([]);
+  const [isBulkDeletePrayersOpen, setIsBulkDeletePrayersOpen] = useState(false);
+  const [isBulkDeleteTestimoniesOpen, setIsBulkDeleteTestimoniesOpen] = useState(false);
+
+  // Preloaded media files cache so navigator.share({ files }) stays inside user gesture
+  const preloadedMediaFilesRef = useRef<Record<string, File>>({});
+  const vcfPrayerInputRef = useRef<HTMLInputElement | null>(null);
+  const [showVcfShortcutInDirectory, setShowVcfShortcutInDirectory] = useState(false);
 
   // Share testimony fallback (when device browser does not support navigator.share with media files)
   const [shareFallback, setShareFallback] = useState<{
     text: string;
     message: string;
+    fileName: string;
+    previewUrl?: string;
+    mediaType?: 'image' | 'video';
+    blob?: Blob;
   } | null>(null);
+
+  // Helper to convert any image blob into standard JPEG File for maximum WhatsApp / Web Share compatibility
+  const buildShareableFile = async (
+    blob: Blob,
+    mediaType?: 'image' | 'video',
+    mimeHint?: string
+  ): Promise<File> => {
+    const rawMime = mimeHint || blob.type || (mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
+    if (mediaType !== 'video' && rawMime.startsWith('image/')) {
+      if (rawMime === 'image/jpeg' || rawMime === 'image/png') {
+        const ext = rawMime === 'image/png' ? 'png' : 'jpg';
+        return new File([blob], `temoignage_shalom.${ext}`, { type: rawMime });
+      }
+      // Normalize webp/heic/etc. -> image/jpeg
+      try {
+        const url = URL.createObjectURL(blob);
+        const jpegBlob = await new Promise<Blob | null>((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || 1080;
+            canvas.height = img.naturalHeight || 1080;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(null);
+              return;
+            }
+            ctx.drawImage(img, 0, 0);
+            canvas.toBlob((res) => resolve(res), 'image/jpeg', 0.92);
+          };
+          img.onerror = () => resolve(null);
+          img.src = url;
+        });
+        URL.revokeObjectURL(url);
+        if (jpegBlob && jpegBlob.size > 0) {
+          return new File([jpegBlob], 'temoignage_shalom.jpg', { type: 'image/jpeg' });
+        }
+      } catch {
+        // Fallback below
+      }
+      return new File([blob], 'temoignage_shalom.jpg', { type: 'image/jpeg' });
+    }
+    const ext = rawMime.includes('webm') ? 'webm' : 'mp4';
+    return new File([blob], `temoignage_shalom.${ext}`, {
+      type: rawMime.startsWith('video/') ? rawMime : 'video/mp4',
+    });
+  };
+
+  useEffect(() => {
+    let active = true;
+    testimonies.forEach((t) => {
+      const key = t.mediaBlobKey;
+      if (!key || preloadedMediaFilesRef.current[key]) return;
+      dbService
+        .getMediaBlob(key)
+        .then(async (blob) => {
+          if (!active || !blob || blob.size === 0) return;
+          const file = await buildShareableFile(blob, t.mediaType, t.mediaMimeType);
+          if (active) {
+            preloadedMediaFilesRef.current[key] = file;
+          }
+        })
+        .catch(() => {});
+    });
+    return () => {
+      active = false;
+    };
+  }, [testimonies]);
 
   const CATEGORIES: { id: PrayerCategory; label: string }[] = [
     { id: 'personnelle', label: 'Prière Personnelle' },
@@ -235,8 +316,12 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
   };
 
   const handlePickPhoneContactsForPrayer = async () => {
-    const res = await pickContactsFromDevice(contacts);
+    setShowVcfShortcutInDirectory(false);
+    const res = await pickContactsFromDevice(contacts, { multiple: true });
     if (res.message) setDirectoryNotice(res.message);
+    if (res.status === 'unsupported' || res.status === 'iframe_blocked') {
+      setShowVcfShortcutInDirectory(true);
+    }
     if (res.status === 'success' && res.contacts.length > 0) {
       const pickedIds = res.contacts.map((c) => c.id);
       setPrayerForm((prev) => ({
@@ -416,14 +501,66 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
     if (!deletingId) return;
     if (deleteType === 'prayer') {
       await dbService.deleteItem(STORES.PRAYERS, deletingId);
+      setSelectedPrayerIds((prev) => prev.filter((id) => id !== deletingId));
     } else {
       const t = testimonies.find((item) => item.id === deletingId);
       if (t?.mediaBlobKey) {
         await dbService.deleteItem(STORES.MEDIA_BLOBS, t.mediaBlobKey);
+        delete preloadedMediaFilesRef.current[t.mediaBlobKey];
       }
       await dbService.deleteItem(STORES.TESTIMONIES, deletingId);
+      setSelectedTestimonyIds((prev) => prev.filter((id) => id !== deletingId));
     }
     setDeletingId(null);
+    reloadData();
+  };
+
+  const handleToggleSelectPrayer = (id: string) => {
+    setSelectedPrayerIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleAllFilteredPrayers = () => {
+    const ids = filteredPrayers.map((p) => p.id);
+    const allSelected = ids.length > 0 && ids.every((id) => selectedPrayerIds.includes(id));
+    setSelectedPrayerIds(allSelected ? [] : ids);
+  };
+
+  const handleBulkDeletePrayers = async () => {
+    if (selectedPrayerIds.length === 0) return;
+    await dbService.deleteItems(STORES.PRAYERS, selectedPrayerIds);
+    setSelectedPrayerIds([]);
+    setIsBulkDeletePrayersOpen(false);
+    reloadData();
+  };
+
+  const handleToggleSelectTestimony = (id: string) => {
+    setSelectedTestimonyIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleAllTestimonies = () => {
+    const ids = testimonies.map((t) => t.id);
+    const allSelected = ids.length > 0 && ids.every((id) => selectedTestimonyIds.includes(id));
+    setSelectedTestimonyIds(allSelected ? [] : ids);
+  };
+
+  const handleBulkDeleteTestimonies = async () => {
+    if (selectedTestimonyIds.length === 0) return;
+    const blobKeys = testimonies
+      .filter((t) => selectedTestimonyIds.includes(t.id) && t.mediaBlobKey)
+      .map((t) => t.mediaBlobKey as string);
+    if (blobKeys.length > 0) {
+      await dbService.deleteItems(STORES.MEDIA_BLOBS, blobKeys);
+      blobKeys.forEach((k) => {
+        delete preloadedMediaFilesRef.current[k];
+      });
+    }
+    await dbService.deleteItems(STORES.TESTIMONIES, selectedTestimonyIds);
+    setSelectedTestimonyIds([]);
+    setIsBulkDeleteTestimoniesOpen(false);
     reloadData();
   };
 
@@ -438,67 +575,72 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
     }« Rendez grâces au Seigneur, car il est bon ! »`;
 
     if (t.mediaBlobKey) {
-      try {
-        const blob = await dbService.getMediaBlob(t.mediaBlobKey);
-        if (blob && blob.size > 0) {
-          const mime =
-            t.mediaMimeType || blob.type || (t.mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
-          const ext = mime.includes('png')
-            ? 'png'
-            : mime.includes('webp')
-            ? 'webp'
-            : mime.includes('webm')
-            ? 'webm'
-            : mime.includes('mp4')
-            ? 'mp4'
-            : t.mediaType === 'video'
-            ? 'mp4'
-            : 'jpg';
-          const fileName = `temoignage_shalom.${ext}`;
-          const file = new File([blob], fileName, { type: mime });
+      // Copy text right away so user also has caption ready if WhatsApp drops text on file share
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).catch(() => {});
+      }
 
+      try {
+        // Use preloaded cached File immediately to preserve synchronous browser user-activation gesture
+        let file: File | undefined = preloadedMediaFilesRef.current[t.mediaBlobKey];
+        if (!file) {
+          const blob = await dbService.getMediaBlob(t.mediaBlobKey);
+          if (blob && blob.size > 0) {
+            file = await buildShareableFile(blob, t.mediaType, t.mediaMimeType);
+            preloadedMediaFilesRef.current[t.mediaBlobKey] = file;
+          }
+        }
+
+        if (file && file.size > 0) {
           const nav = navigator as Navigator & {
             canShare?: (data: ShareData) => boolean;
           };
 
-          if (nav.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
-            try {
-              await nav.share({
-                title: t.title,
-                text,
-                files: [file],
-              });
-              return;
-            } catch (err: unknown) {
-              if (err instanceof Error && err.name === 'AbortError') {
+          if (typeof nav.share === 'function') {
+            const payloads: ShareData[] = [
+              { title: t.title, text, files: [file] },
+              { text, files: [file] },
+              { files: [file] },
+            ];
+
+            for (const payload of payloads) {
+              const supported = !nav.canShare || nav.canShare(payload);
+              if (!supported) continue;
+              try {
+                await nav.share(payload);
                 return;
+              } catch (err: unknown) {
+                if (err instanceof Error && err.name === 'AbortError') {
+                  return;
+                }
+                // Try next simpler payload
               }
             }
           }
 
-          // Fallback when browser does not support Web Share with media files:
-          // Auto-download the photo/video file + copy text + provide direct WhatsApp button
-          const dlUrl = URL.createObjectURL(blob);
+          // Fallback when device browser (desktop / embedded iframe) cannot send media files directly:
+          // Download file + attempt copying image to clipboard + show preview modal
+          const dlUrl = URL.createObjectURL(file);
           const link = document.createElement('a');
           link.href = dlUrl;
-          link.download = fileName;
+          link.download = file.name;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-          setTimeout(() => URL.revokeObjectURL(dlUrl), 1000);
-
-          if (navigator.clipboard) {
-            navigator.clipboard.writeText(text).catch(() => {});
-          }
 
           setShareFallback({
             text,
-            message: `Le fichier média (${fileName}) a été téléchargé et le texte copié. Cliquez sur « Ouvrir WhatsApp » puis joignez le fichier téléchargé.`,
+            fileName: file.name,
+            previewUrl: dlUrl,
+            mediaType: t.mediaType,
+            blob: file,
+            message:
+              'Votre navigateur ne permet pas d’envoyer directement un fichier image/vidéo vers WhatsApp depuis un lien web. Le média vient d’être téléchargé et le texte copié : joignez simplement le fichier dans votre discussion WhatsApp.',
           });
           return;
         }
       } catch {
-        // Fallback to text sharing if blob unavailable
+        // Fall through if blob lookup fails
       }
     }
 
@@ -611,19 +753,64 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
             </button>
           </div>
 
+          {filteredPrayers.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <button
+                type="button"
+                onClick={handleToggleAllFilteredPrayers}
+                className="text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5 hover:text-blue-700"
+              >
+                {selectedPrayerIds.length === filteredPrayers.length && filteredPrayers.length > 0 ? (
+                  <CheckSquare className="w-4 h-4 text-blue-600" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400" />
+                )}
+                <span>Tout sélectionner ({selectedPrayerIds.length})</span>
+              </button>
+
+              {selectedPrayerIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsBulkDeletePrayersOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Supprimer ({selectedPrayerIds.length})</span>
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredPrayers.map((prayer) => {
               const statusObj = STATUSES.find((s) => s.id === prayer.status);
               const catObj = CATEGORIES.find((c) => c.id === prayer.category);
+              const isSelected = selectedPrayerIds.includes(prayer.id);
 
               return (
                 <div
                   key={prayer.id}
-                  className="p-5 rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200/80 dark:border-slate-800/80 flex flex-col justify-between space-y-3"
+                  className={`p-5 rounded-2xl bg-white dark:bg-[#0c1631] border flex flex-col justify-between space-y-3 transition ${
+                    isSelected
+                      ? 'border-blue-600 ring-2 ring-blue-600/20'
+                      : 'border-slate-200/80 dark:border-slate-800/80'
+                  }`}
                 >
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSelectPrayer(prayer.id)}
+                          aria-label="Sélectionner cette prière"
+                          className="text-slate-400 hover:text-blue-600"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-blue-600" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
                         <span className={`font-bold ${statusObj?.textClass}`}>
                           {statusObj?.label}
                         </span>
@@ -779,23 +966,71 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {testimonies.map((testimony) => (
-              <div
-                key={testimony.id}
-                className="p-5 rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200/80 dark:border-slate-800/80 flex flex-col justify-between space-y-3"
+          {testimonies.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <button
+                type="button"
+                onClick={handleToggleAllTestimonies}
+                className="text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5 hover:text-blue-700"
               >
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between text-xs text-slate-500">
-                    <span className="font-bold text-emerald-700 dark:text-emerald-400">
-                      Témoignage Exaucé
-                    </span>
-                    <span className="tabular-nums">{testimony.date}</span>
-                  </div>
+                {selectedTestimonyIds.length === testimonies.length && testimonies.length > 0 ? (
+                  <CheckSquare className="w-4 h-4 text-blue-600" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400" />
+                )}
+                <span>Tout sélectionner ({selectedTestimonyIds.length})</span>
+              </button>
 
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    {testimony.title}
-                  </h3>
+              {selectedTestimonyIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsBulkDeleteTestimoniesOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Supprimer ({selectedTestimonyIds.length})</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {testimonies.map((testimony) => {
+              const isSelected = selectedTestimonyIds.includes(testimony.id);
+              return (
+                <div
+                  key={testimony.id}
+                  className={`p-5 rounded-2xl bg-white dark:bg-[#0c1631] border flex flex-col justify-between space-y-3 transition ${
+                    isSelected
+                      ? 'border-blue-600 ring-2 ring-blue-600/20'
+                      : 'border-slate-200/80 dark:border-slate-800/80'
+                  }`}
+                >
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSelectTestimony(testimony.id)}
+                          aria-label="Sélectionner ce témoignage"
+                          className="text-slate-400 hover:text-blue-600"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-blue-600" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                        <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                          Témoignage Exaucé
+                        </span>
+                      </div>
+                      <span className="tabular-nums">{testimony.date}</span>
+                    </div>
+
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                      {testimony.title}
+                    </h3>
 
                   {testimony.mediaBlobKey && (
                     <TestimonyMediaPreview
@@ -846,7 +1081,8 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
 
             {testimonies.length === 0 && (
               <div className="col-span-full py-12 text-center rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200 dark:border-slate-800 space-y-1">
@@ -1050,22 +1286,36 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
               <span>Répertoire du téléphone</span>
             </button>
 
-            <label className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer">
-              <Upload className="w-3.5 h-3.5 text-blue-600" />
-              <span>Importer .vcf</span>
               <input
+                ref={vcfPrayerInputRef}
                 type="file"
-                accept=".vcf,.csv"
+                accept=".vcf,.csv,text/vcard"
                 onChange={handleImportVcfForPrayer}
                 className="hidden"
               />
-            </label>
-          </div>
+              <button
+                type="button"
+                onClick={() => vcfPrayerInputRef.current?.click()}
+                className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5"
+              >
+                <Upload className="w-3.5 h-3.5 text-blue-600" />
+                <span>Importer .vcf</span>
+              </button>
+            </div>
 
           {directoryNotice && (
-            <p className="text-[11px] p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200">
-              {directoryNotice}
-            </p>
+            <div className="text-[11px] p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200 flex flex-wrap items-center justify-between gap-2">
+              <span>{directoryNotice}</span>
+              {showVcfShortcutInDirectory && (
+                <button
+                  type="button"
+                  onClick={() => vcfPrayerInputRef.current?.click()}
+                  className="px-2.5 py-1 rounded-lg bg-blue-700 text-white font-bold shrink-0"
+                >
+                  Sélectionner .vcf
+                </button>
+              )}
+            </div>
           )}
 
           <div className="relative">
@@ -1308,30 +1558,71 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
         onCancel={() => setDeletingId(null)}
       />
 
+      <ConfirmDialog
+        isOpen={isBulkDeletePrayersOpen}
+        title="Supprimer les prières sélectionnées ?"
+        message={`Vous allez supprimer définitivement ${selectedPrayerIds.length} requête(s) de prière sélectionnée(s).`}
+        confirmLabel="Oui, supprimer en masse"
+        isDestructive
+        onConfirm={handleBulkDeletePrayers}
+        onCancel={() => setIsBulkDeletePrayersOpen(false)}
+      />
+
+      <ConfirmDialog
+        isOpen={isBulkDeleteTestimoniesOpen}
+        title="Supprimer les témoignages sélectionnés ?"
+        message={`Vous allez supprimer définitivement ${selectedTestimonyIds.length} témoignage(s) et leurs médias associés.`}
+        confirmLabel="Oui, supprimer en masse"
+        isDestructive
+        onConfirm={handleBulkDeleteTestimonies}
+        onCancel={() => setIsBulkDeleteTestimoniesOpen(false)}
+      />
+
       {/* Fallback Modal when device doesn't support Web Share API with files */}
       <Modal
         isOpen={!!shareFallback}
-        onClose={() => setShareFallback(null)}
+        onClose={() => {
+          if (shareFallback?.previewUrl) URL.revokeObjectURL(shareFallback.previewUrl);
+          setShareFallback(null);
+        }}
         title="Partager sur WhatsApp avec le média"
         maxWidth="sm"
       >
         {shareFallback && (
           <div className="space-y-4 text-xs">
+            {shareFallback.previewUrl && (
+              <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-200 dark:border-slate-800">
+                {shareFallback.mediaType === 'video' ? (
+                  <video src={shareFallback.previewUrl} controls className="w-full max-h-44 object-contain" />
+                ) : (
+                  <img
+                    src={shareFallback.previewUrl}
+                    alt="Aperçu du média"
+                    className="w-full max-h-44 object-contain mx-auto"
+                  />
+                )}
+              </div>
+            )}
+
             <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
               {shareFallback.message}
             </p>
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShareFallback(null)}
-                className="px-3.5 py-2 rounded-xl text-slate-600 dark:text-slate-300 font-semibold"
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <a
+                href={shareFallback.previewUrl}
+                download={shareFallback.fileName}
+                className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold flex items-center gap-1.5"
               >
-                Fermer
-              </button>
+                <Download className="w-3.5 h-3.5" />
+                <span>Télécharger</span>
+              </a>
+
               <button
                 type="button"
                 onClick={() => {
                   const txt = shareFallback.text;
+                  if (shareFallback.previewUrl) URL.revokeObjectURL(shareFallback.previewUrl);
                   setShareFallback(null);
                   if (onOpenWhatsAppShare) {
                     onOpenWhatsAppShare(txt);

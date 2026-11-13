@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   MessageSquare,
   Send,
@@ -14,23 +14,29 @@ import {
   Upload,
   AlertCircle,
   Plus,
+  Trash2,
+  History,
 } from 'lucide-react';
 import { dbService, STORES } from '../../services/db';
 import { pickContactsFromDevice, importContactsFromVcfOrCsv } from '../../services/phoneContacts';
 import { useShalomDB } from '../../hooks/useShalomDB';
 import { Contact, MessageTemplate, ShareHistoryItem } from '../../types';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 
 interface MessagingModuleProps {
   initialContacts?: Contact[];
+  initialMessage?: string;
   onClose?: () => void;
 }
 
 export const MessagingModule: React.FC<MessagingModuleProps> = ({
   initialContacts,
+  initialMessage,
   onClose,
 }) => {
-  const { contacts, messageTemplates, reloadData } = useShalomDB();
+  const { contacts, messageTemplates, shareHistory, reloadData } = useShalomDB();
 
+  const [activeSubTab, setActiveSubTab] = useState<'compose' | 'history'>('compose');
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
     initialContacts && initialContacts.length > 0 ? initialContacts.map((c) => c.id) : []
   );
@@ -41,15 +47,27 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
   );
   const [recipientSearch, setRecipientSearch] = useState('');
   const [infoBanner, setInfoBanner] = useState<string | null>(null);
+  const [showVcfShortcutInBanner, setShowVcfShortcutInBanner] = useState(false);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickName, setQuickName] = useState('');
   const [quickPhone, setQuickPhone] = useState('');
+  const [isBulkDeleteRecipientsOpen, setIsBulkDeleteRecipientsOpen] = useState(false);
+
+  // History bulk selection
+  const [selectedHistoryIds, setSelectedHistoryIds] = useState<string[]>([]);
+  const [isBulkDeleteHistoryOpen, setIsBulkDeleteHistoryOpen] = useState(false);
+
+  // Optional country code override when a contact has a local number starting with 0 without '+'
+  const [countryPrefixInput, setCountryPrefixInput] = useState('');
+
+  const vcfInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (initialContacts && initialContacts.length > 0) {
       setSelectedIds(initialContacts.map((c) => c.id));
       const extras = initialContacts.filter((ic) => !contacts.some((c) => c.id === ic.id));
       setExtraRecipients(extras);
+      setActiveSubTab('compose');
     }
   }, [initialContacts, contacts]);
 
@@ -66,19 +84,27 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
 
   const [channel, setChannel] = useState<'whatsapp' | 'sms'>('whatsapp');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
-    messageTemplates[0]?.id || ''
+    initialMessage ? '' : messageTemplates[0]?.id || ''
   );
   const [customMessage, setCustomMessage] = useState<string>(
-    messageTemplates[0]?.content || 'Que la paix du Seigneur vous accompagne !'
+    initialMessage || messageTemplates[0]?.content || 'Que la paix du Seigneur vous accompagne !'
   );
   const [themeVariable, setThemeVariable] = useState('La Paix Divine');
 
   useEffect(() => {
-    if (!selectedTemplateId && messageTemplates.length > 0) {
+    if (initialMessage) {
+      setSelectedTemplateId('');
+      setCustomMessage(initialMessage);
+      setActiveSubTab('compose');
+    }
+  }, [initialMessage]);
+
+  useEffect(() => {
+    if (!initialMessage && !selectedTemplateId && messageTemplates.length > 0) {
       setSelectedTemplateId(messageTemplates[0].id);
       setCustomMessage(messageTemplates[0].content);
     }
-  }, [messageTemplates, selectedTemplateId]);
+  }, [messageTemplates, selectedTemplateId, initialMessage]);
 
   const [campaignStarted, setCampaignStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -106,6 +132,44 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
     ? renderMessageForContact(customMessage, activeContact)
     : '';
 
+  const normalizeForWhatsapp = (rawPhone: string, prefixOverride?: string) => {
+    let clean = rawPhone.replace(/[^0-9+]/g, '');
+    if (clean.startsWith('00')) {
+      clean = '+' + clean.slice(2);
+    }
+    const cleanPrefix = (prefixOverride || '').replace(/[^0-9]/g, '');
+
+    if (clean.startsWith('+')) {
+      return {
+        e164: clean,
+        waNumber: clean.slice(1),
+        needsCountryCode: false,
+      };
+    }
+
+    if (clean.startsWith('0')) {
+      if (cleanPrefix.length > 0) {
+        const combined = cleanPrefix + clean.slice(1);
+        return {
+          e164: '+' + combined,
+          waNumber: combined,
+          needsCountryCode: false,
+        };
+      }
+      return {
+        e164: clean,
+        waNumber: '',
+        needsCountryCode: true,
+      };
+    }
+
+    return {
+      e164: clean,
+      waNumber: clean,
+      needsCountryCode: clean.length < 7,
+    };
+  };
+
   const handleToggleRecipient = (id: string) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
@@ -125,8 +189,12 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
   };
 
   const handlePickPhoneContacts = async () => {
-    const res = await pickContactsFromDevice(allAvailableContacts);
+    setShowVcfShortcutInBanner(false);
+    const res = await pickContactsFromDevice(allAvailableContacts, { multiple: true });
     if (res.message) setInfoBanner(res.message);
+    if (res.status === 'unsupported' || res.status === 'iframe_blocked') {
+      setShowVcfShortcutInBanner(true);
+    }
     if (res.status === 'success' && res.contacts.length > 0) {
       const pickedIds = res.contacts.map((c) => c.id);
       setSelectedIds((prev) => Array.from(new Set([...prev, ...pickedIds])));
@@ -137,6 +205,7 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
   const handleImportVcf = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setShowVcfShortcutInBanner(false);
     const { contacts: imported, addedCount } = await importContactsFromVcfOrCsv(
       file,
       allAvailableContacts
@@ -175,6 +244,18 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
     reloadData();
   };
 
+  const handleBulkDeleteSelectedRecipients = async () => {
+    const savedContactIds = selectedIds.filter((id) => contacts.some((c) => c.id === id));
+    if (savedContactIds.length > 0) {
+      await dbService.deleteItems(STORES.CONTACTS, savedContactIds);
+    }
+    setExtraRecipients((prev) => prev.filter((c) => !selectedIds.includes(c.id)));
+    setSelectedIds([]);
+    setIsBulkDeleteRecipientsOpen(false);
+    setInfoBanner(`${savedContactIds.length} contact(s) supprimé(s).`);
+    reloadData();
+  };
+
   const handleSelectTemplate = (tpl: MessageTemplate) => {
     setSelectedTemplateId(tpl.id);
     setCustomMessage(tpl.content);
@@ -192,22 +273,38 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
     setCampaignResults([]);
   };
 
-  const handleOpenExternalApp = () => {
+  const handleOpenExternalApp = (chooseContactInsideWhatsApp = false) => {
     if (!activeContact) return;
 
-    let cleanPhone = activeContact.phone.replace(/[^0-9+]/g, '');
-    if (!cleanPhone.startsWith('+') && cleanPhone.startsWith('0')) {
-      cleanPhone = '+33' + cleanPhone.slice(1);
-    }
-
     const encodedText = encodeURIComponent(currentPreviewMessage);
-    const appUrl =
-      channel === 'whatsapp'
-        ? `https://wa.me/${cleanPhone.replace('+', '')}?text=${encodedText}`
-        : `sms:${cleanPhone}?body=${encodedText}`;
+    const parsed = normalizeForWhatsapp(activeContact.phone, countryPrefixInput);
+
+    let appUrl: string;
+    if (channel === 'whatsapp') {
+      if (chooseContactInsideWhatsApp || parsed.needsCountryCode || !parsed.waNumber) {
+        appUrl = `https://wa.me/?text=${encodedText}`;
+      } else {
+        appUrl = `https://wa.me/${parsed.waNumber}?text=${encodedText}`;
+      }
+    } else {
+      const smsPhone = parsed.e164 || activeContact.phone.replace(/[^0-9+]/g, '');
+      appUrl = `sms:${smsPhone}?body=${encodedText}`;
+    }
 
     window.open(appUrl, '_blank');
     setWaitingConfirmation(true);
+  };
+
+  const handleSaveCountryPrefixToContact = async () => {
+    if (!activeContact) return;
+    const cleanPrefix = countryPrefixInput.replace(/[^0-9]/g, '');
+    if (!cleanPrefix) return;
+    const raw = activeContact.phone.replace(/[^0-9+]/g, '');
+    const updatedPhone = raw.startsWith('0') ? `+${cleanPrefix}${raw.slice(1)}` : `+${cleanPrefix}${raw}`;
+    const updatedContact: Contact = { ...activeContact, phone: updatedPhone };
+    await dbService.put(STORES.CONTACTS, updatedContact);
+    setExtraRecipients((prev) => prev.map((c) => (c.id === updatedContact.id ? updatedContact : c)));
+    reloadData();
   };
 
   const handleConfirmResult = async (status: 'confirme_envoye' | 'ignore' | 'echec') => {
@@ -236,7 +333,32 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
     }
   };
 
+  const handleToggleHistoryItem = (id: string) => {
+    setSelectedHistoryIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllHistory = () => {
+    if (selectedHistoryIds.length === shareHistory.length) {
+      setSelectedHistoryIds([]);
+    } else {
+      setSelectedHistoryIds(shareHistory.map((h) => h.id));
+    }
+  };
+
+  const handleBulkDeleteHistory = async () => {
+    if (selectedHistoryIds.length === 0) return;
+    await dbService.deleteItems(STORES.SHARE_HISTORY, selectedHistoryIds);
+    setSelectedHistoryIds([]);
+    setIsBulkDeleteHistoryOpen(false);
+    reloadData();
+  };
+
   const isCampaignFinished = campaignStarted && currentIndex >= targetContacts.length;
+  const activePhoneCheck = activeContact
+    ? normalizeForWhatsapp(activeContact.phone, countryPrefixInput)
+    : null;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -250,21 +372,144 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
             Choisissez vos destinataires dans votre répertoire et envoyez un message personnel avec confirmation manuelle.
           </p>
         </div>
+
+        {!campaignStarted && (
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-800/80 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('compose')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition ${
+                activeSubTab === 'compose'
+                  ? 'bg-white dark:bg-[#0f2b5c] text-blue-700 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              Nouveau partage
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('history')}
+              className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition ${
+                activeSubTab === 'history'
+                  ? 'bg-white dark:bg-[#0f2b5c] text-blue-700 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Historique ({shareHistory.length})</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {infoBanner && (
-        <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-3">
+        <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{infoBanner}</span>
           </span>
-          <button type="button" onClick={() => setInfoBanner(null)} className="font-bold underline shrink-0">
-            Fermer
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {showVcfShortcutInBanner && (
+              <button
+                type="button"
+                onClick={() => vcfInputRef.current?.click()}
+                className="px-2.5 py-1 rounded-lg bg-blue-700 text-white font-bold"
+              >
+                Choisir fichier .vcf
+              </button>
+            )}
+            <button type="button" onClick={() => setInfoBanner(null)} className="font-bold underline">
+              Fermer
+            </button>
+          </div>
         </div>
       )}
 
-      {!campaignStarted ? (
+      <input
+        ref={vcfInputRef}
+        type="file"
+        accept=".vcf,.csv,text/vcard"
+        onChange={handleImportVcf}
+        className="hidden"
+      />
+
+      {activeSubTab === 'history' && !campaignStarted ? (
+        <div className="space-y-4">
+          <div className="p-3.5 rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200/80 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={handleSelectAllHistory}
+              disabled={shareHistory.length === 0}
+              className="text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5 disabled:opacity-40"
+            >
+              {selectedHistoryIds.length === shareHistory.length && shareHistory.length > 0 ? (
+                <CheckSquare className="w-4 h-4 text-blue-600" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-400" />
+              )}
+              <span>Tout sélectionner ({selectedHistoryIds.length})</span>
+            </button>
+
+            {selectedHistoryIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteHistoryOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Supprimer la sélection ({selectedHistoryIds.length})</span>
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-2.5">
+            {shareHistory.map((item) => {
+              const checked = selectedHistoryIds.includes(item.id);
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => handleToggleHistoryItem(item.id)}
+                  className={`p-4 rounded-2xl bg-white dark:bg-[#0c1631] border cursor-pointer transition flex items-start gap-3 ${
+                    checked
+                      ? 'border-blue-600 ring-2 ring-blue-600/20'
+                      : 'border-slate-200/80 dark:border-slate-800/80'
+                  }`}
+                >
+                  <div className="pt-0.5 text-slate-400">
+                    {checked ? (
+                      <CheckSquare className="w-4 h-4 text-blue-600" />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="font-bold text-slate-900 dark:text-white">
+                        {item.contactName} ({item.contactPhone})
+                      </span>
+                      <span className="text-[11px] text-slate-500 tabular-nums">
+                        {item.channel.toUpperCase()} · {item.timestamp.split('T')[0]}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
+                      {item.messageText}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+
+            {shareHistory.length === 0 && (
+              <div className="py-12 text-center rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200 dark:border-slate-800 space-y-1">
+                <History className="w-9 h-9 text-slate-400 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Aucun envoi enregistré pour le moment.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : !campaignStarted ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
             <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200/80 dark:border-slate-800/80 space-y-3 shadow-xs">
@@ -379,11 +624,14 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
                 </button>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <label className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer">
+                  <button
+                    type="button"
+                    onClick={() => vcfInputRef.current?.click()}
+                    className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1.5"
+                  >
                     <Upload className="w-3.5 h-3.5 text-blue-600" />
                     <span>Importer .vcf</span>
-                    <input type="file" accept=".vcf,.csv" onChange={handleImportVcf} className="hidden" />
-                  </label>
+                  </button>
 
                   <button
                     type="button"
@@ -412,7 +660,7 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
                       <input
                         type="tel"
                         required
-                        placeholder="+33 6..."
+                        placeholder="Numéro avec indicatif pays"
                         value={quickPhone}
                         onChange={(e) => setQuickPhone(e.target.value)}
                         className="flex-1 px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
@@ -440,7 +688,20 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
                   />
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between gap-2">
+                  {selectedIds.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkDeleteRecipientsOpen(true)}
+                      className="text-[11px] font-bold text-red-600 hover:underline flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Supprimer ({selectedIds.length})</span>
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+
                   <button
                     type="button"
                     onClick={handleToggleAllFiltered}
@@ -595,16 +856,58 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
             {currentPreviewMessage}
           </div>
 
+          {channel === 'whatsapp' && activePhoneCheck?.needsCountryCode && !waitingConfirmation && (
+            <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 space-y-2 text-xs">
+              <p className="font-semibold text-amber-900 dark:text-amber-200">
+                Ce numéro ({activeContact.phone}) commence par 0 sans indicatif pays (+...).
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="tel"
+                  placeholder="Indicatif pays (ex: 225, 237, 243, 33)"
+                  value={countryPrefixInput}
+                  onChange={(e) => setCountryPrefixInput(e.target.value.replace(/[^0-9+]/g, ''))}
+                  className="flex-1 min-w-[160px] px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800"
+                />
+                {countryPrefixInput.trim().length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSaveCountryPrefixToContact}
+                    className="px-3 py-1.5 rounded-lg bg-blue-700 text-white font-bold"
+                  >
+                    Mettre à jour la fiche
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {!waitingConfirmation ? (
-            <div className="space-y-3 pt-2">
+            <div className="space-y-2.5 pt-2">
               <button
                 type="button"
-                onClick={handleOpenExternalApp}
+                onClick={() => handleOpenExternalApp(false)}
                 className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-sm transition"
               >
                 <ExternalLink className="w-4 h-4" />
-                <span>Ouvrir {channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}</span>
+                <span>
+                  {channel === 'whatsapp'
+                    ? activePhoneCheck?.needsCountryCode
+                      ? 'Ouvrir WhatsApp (sélectionner dans WhatsApp)'
+                      : 'Ouvrir WhatsApp'
+                    : 'Ouvrir SMS'}
+                </span>
               </button>
+
+              {channel === 'whatsapp' && !activePhoneCheck?.needsCountryCode && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenExternalApp(true)}
+                  className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs transition"
+                >
+                  Ou choisir le destinataire directement dans WhatsApp
+                </button>
+              )}
 
               <div className="flex items-center justify-between text-xs text-slate-500 pt-2">
                 <button
@@ -662,6 +965,26 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={isBulkDeleteRecipientsOpen}
+        title="Supprimer les contacts sélectionnés ?"
+        message={`Vous allez supprimer définitivement ${selectedIds.length} contact(s) de votre répertoire SHALOM.`}
+        confirmLabel="Oui, supprimer"
+        isDestructive
+        onConfirm={handleBulkDeleteSelectedRecipients}
+        onCancel={() => setIsBulkDeleteRecipientsOpen(false)}
+      />
+
+      <ConfirmDialog
+        isOpen={isBulkDeleteHistoryOpen}
+        title="Supprimer l’historique sélectionné ?"
+        message={`Vous allez supprimer définitivement ${selectedHistoryIds.length} entrée(s) de l’historique d’envoi.`}
+        confirmLabel="Oui, supprimer"
+        isDestructive
+        onConfirm={handleBulkDeleteHistory}
+        onCancel={() => setIsBulkDeleteHistoryOpen(false)}
+      />
     </div>
   );
 };

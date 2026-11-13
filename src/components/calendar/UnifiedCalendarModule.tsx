@@ -8,6 +8,8 @@ import {
   MapPin,
   CheckCircle2,
   Trash2,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { dbService, STORES } from '../../services/db';
 import { useShalomDB } from '../../hooks/useShalomDB';
@@ -48,6 +50,8 @@ export const UnifiedCalendarModule: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedActivityIds, setSelectedActivityIds] = useState<string[]>([]);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [form, setForm] = useState<{
     title: string;
     activityType: CalendarActivityType;
@@ -148,7 +152,31 @@ export const UnifiedCalendarModule: React.FC = () => {
   const handleConfirmDeleteCalendarItem = async () => {
     if (!deletingId) return;
     await dbService.deleteItem(STORES.CALENDAR_ACTIVITIES, deletingId);
+    setSelectedActivityIds((prev) => prev.filter((id) => id !== deletingId));
     setDeletingId(null);
+    reloadData();
+  };
+
+  const deletableVisibleIds = filteredItems.filter((i) => !!i.raw).map((i) => i.id);
+
+  const handleToggleSelectActivity = (id: string) => {
+    setSelectedActivityIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleAllActivities = () => {
+    const allSelected =
+      deletableVisibleIds.length > 0 &&
+      deletableVisibleIds.every((id) => selectedActivityIds.includes(id));
+    setSelectedActivityIds(allSelected ? [] : deletableVisibleIds);
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedActivityIds.length === 0) return;
+    await dbService.deleteItems(STORES.CALENDAR_ACTIVITIES, selectedActivityIds);
+    setSelectedActivityIds([]);
+    setIsBulkDeleteOpen(false);
     reloadData();
   };
 
@@ -273,15 +301,63 @@ export const UnifiedCalendarModule: React.FC = () => {
 
         {/* List */}
         <div className="lg:col-span-3 space-y-3">
+          {deletableVisibleIds.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <button
+                type="button"
+                onClick={handleToggleAllActivities}
+                className="text-xs font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5 hover:text-blue-700"
+              >
+                {deletableVisibleIds.every((id) => selectedActivityIds.includes(id)) &&
+                deletableVisibleIds.length > 0 ? (
+                  <CheckSquare className="w-4 h-4 text-blue-600" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400" />
+                )}
+                <span>Tout sélectionner ({selectedActivityIds.length})</span>
+              </button>
+
+              {selectedActivityIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsBulkDeleteOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Supprimer ({selectedActivityIds.length})</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {filteredItems.map((item) => {
             const info = getTypeInfo(item.activityType);
+            const isSelected = !!item.raw && selectedActivityIds.includes(item.id);
             return (
               <div
                 key={item.id}
-                className="p-4 rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200/80 dark:border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+                className={`p-4 rounded-2xl bg-white dark:bg-[#0c1631] border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs transition ${
+                  isSelected
+                    ? 'border-blue-600 ring-2 ring-blue-600/20'
+                    : 'border-slate-200/80 dark:border-slate-800/80'
+                }`}
               >
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
+                    {item.raw && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSelectActivity(item.id)}
+                        aria-label="Sélectionner cet événement"
+                        className="text-slate-400 hover:text-blue-600"
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="w-4 h-4 text-blue-600" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
+                    )}
                     <span style={{ color: info.color }}>{info.label}</span>
                     <span className="text-slate-300">·</span>
                     <span className="tabular-nums text-slate-600 dark:text-slate-300">
@@ -464,6 +540,17 @@ export const UnifiedCalendarModule: React.FC = () => {
         isDestructive
         onConfirm={handleConfirmDeleteCalendarItem}
         onCancel={() => setDeletingId(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={isBulkDeleteOpen}
+        title="Supprimer les moments sélectionnés ?"
+        message={`Vous allez supprimer définitivement ${selectedActivityIds.length} événement(s) de votre calendrier.`}
+        confirmLabel="Oui, supprimer en masse"
+        cancelLabel="Annuler"
+        isDestructive
+        onConfirm={handleConfirmBulkDelete}
+        onCancel={() => setIsBulkDeleteOpen(false)}
       />
     </div>
   );

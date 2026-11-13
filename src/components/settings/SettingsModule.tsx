@@ -18,6 +18,8 @@ import {
   Trash2,
   BookOpen,
   RotateCcw,
+  Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { dbService, STORES } from '../../services/db';
 import { useShalomDB } from '../../hooks/useShalomDB';
@@ -59,6 +61,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   }, [initialSubTab]);
 
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   const [userForm, setUserForm] = useState<UserProfile>({
     id: userProfile?.id || 'user_main',
@@ -89,14 +92,17 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   const [patternStep1, setPatternStep1] = useState<string>('');
   const [patternStep2, setPatternStep2] = useState<string>('');
   const [securityNotice, setSecurityNotice] = useState<string | null>(null);
+  const [isSavingSecurity, setIsSavingSecurity] = useState(false);
 
   const [storageStats, setStorageStats] = useState<{
     usageMB: number;
     quotaMB: number;
     percentage: number;
-  }>({ usageMB: 0, quotaMB: 1000, percentage: 0 });
+    persisted: boolean;
+  }>({ usageMB: 0, quotaMB: 1000, percentage: 0, persisted: false });
   const [backupLoading, setBackupLoading] = useState(false);
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
+  const [storageActionMessage, setStorageActionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (userProfile) setUserForm(userProfile);
@@ -133,16 +139,27 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleaned: UserProfile = {
-      ...userForm,
-      fullName: userForm.fullName.trim() || 'Utilisateur',
-      dashboardVerseText: userForm.dashboardVerseText?.trim() || '',
-      dashboardVerseRef: userForm.dashboardVerseRef?.trim() || '',
-    };
-    await dbService.put(STORES.PROFILES, cleaned);
-    setUserForm(cleaned);
-    setSaveNotice('Profil et verset d’accueil enregistrés.');
-    reloadData();
+    setSaveNotice(null);
+    setIsSavingProfile(true);
+    try {
+      const cleaned: UserProfile = {
+        ...userForm,
+        fullName: userForm.fullName.trim() || 'Utilisateur',
+        dashboardVerseText: userForm.dashboardVerseText?.trim() || '',
+        dashboardVerseRef: userForm.dashboardVerseRef?.trim() || '',
+      };
+      await Promise.all([
+        dbService.put(STORES.PROFILES, cleaned),
+        new Promise((resolve) => setTimeout(resolve, 350)),
+      ]);
+      setUserForm(cleaned);
+      setSaveNotice('Vos paramètres, profil et verset d’accueil ont bien été enregistrés.');
+      reloadData();
+    } catch {
+      setSaveNotice('Une erreur est survenue lors de l’enregistrement.');
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const toggleFeatureLock = (featureId: LockableFeatureId) => {
@@ -199,35 +216,41 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
       }
     }
 
-    const finalHash = secretToHash ? await hashSecret(secretToHash) : securityConfig.secretHash;
+    setIsSavingSecurity(true);
+    try {
+      const finalHash = secretToHash ? await hashSecret(secretToHash) : securityConfig.secretHash;
 
-    if (!draftLockOnLaunch && draftLockedFeatures.length === 0) {
-      setSecurityNotice(
-        'Sélectionnez au moins « Verrouiller l’ouverture de l’application » ou une fonctionnalité à protéger.'
-      );
-      return;
+      if (!draftLockOnLaunch && draftLockedFeatures.length === 0) {
+        setSecurityNotice(
+          'Sélectionnez au moins « Verrouiller l’ouverture de l’application » ou une fonctionnalité à protéger.'
+        );
+        return;
+      }
+
+      const nextConfig: SecurityConfig = {
+        isEnabled: true,
+        lockMode: draftLockMode,
+        secretHash: finalHash,
+        lockOnLaunch: draftLockOnLaunch,
+        lockedFeatures: draftLockedFeatures,
+      };
+
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      saveSecurityConfig(nextConfig);
+      setSecurityConfig(nextConfig);
+      onSecurityChanged(nextConfig);
+      setAppSessionUnlocked(true);
+
+      setNewPin('');
+      setConfirmPin('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPatternStep1('');
+      setPatternStep2('');
+      setSecurityNotice('Protection enregistrée et activée avec succès.');
+    } finally {
+      setIsSavingSecurity(false);
     }
-
-    const nextConfig: SecurityConfig = {
-      isEnabled: true,
-      lockMode: draftLockMode,
-      secretHash: finalHash,
-      lockOnLaunch: draftLockOnLaunch,
-      lockedFeatures: draftLockedFeatures,
-    };
-
-    saveSecurityConfig(nextConfig);
-    setSecurityConfig(nextConfig);
-    onSecurityChanged(nextConfig);
-    setAppSessionUnlocked(true);
-
-    setNewPin('');
-    setConfirmPin('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setPatternStep1('');
-    setPatternStep2('');
-    setSecurityNotice('Protection enregistrée et activée.');
   };
 
   const handleDisableSecurity = () => {
@@ -486,12 +509,32 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </div>
             </div>
 
-            <button
-              type="submit"
-              className="px-6 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs shadow-sm transition"
-            >
-              Enregistrer
-            </button>
+            <div className="space-y-3">
+              {saveNotice && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-xs font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{saveNotice}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSavingProfile}
+                className="px-6 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-70 text-white font-bold text-xs shadow-sm transition inline-flex items-center gap-2"
+              >
+                {isSavingProfile ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Enregistrement en cours...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Enregistrer</span>
+                  </>
+                )}
+              </button>
+            </div>
           </form>
 
           <div className="p-5 rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200/80 dark:border-slate-800/80 space-y-4 shadow-xs">
@@ -768,14 +811,32 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
               </div>
             </div>
 
-            <div className="flex justify-end pt-2">
-              <button
-                type="submit"
-                className="px-6 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold flex items-center gap-2"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Enregistrer la protection</span>
-              </button>
+            <div className="space-y-3 pt-2">
+              {securityNotice && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-xs font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{securityNotice}</span>
+                </div>
+              )}
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isSavingSecurity}
+                  className="px-6 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-70 text-white text-xs font-bold flex items-center gap-2"
+                >
+                  {isSavingSecurity ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Enregistrement en cours...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Enregistrer la protection</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </form>
@@ -785,15 +846,27 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
       {subTab === 'backup' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="p-5 rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200/80 dark:border-slate-800/80 space-y-4 shadow-xs">
-            <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-bold text-xs uppercase tracking-wider">
-              <HardDrive className="w-4 h-4" />
-              <span>Stockage Local</span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-bold text-xs uppercase tracking-wider">
+                <HardDrive className="w-4 h-4" />
+                <span>Stockage Local Haute Capacité</span>
+              </div>
+              {storageStats.persisted && (
+                <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                  Mémoire persistante active
+                </span>
+              )}
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs font-semibold">
                 <span className="tabular-nums">Utilisé : {storageStats.usageMB} Mo</span>
-                <span className="tabular-nums">Quota : {storageStats.quotaMB} Mo</span>
+                <span className="tabular-nums">
+                  Capacité :{' '}
+                  {storageStats.quotaMB >= 1024
+                    ? `${(storageStats.quotaMB / 1024).toFixed(1)} Go`
+                    : `${storageStats.quotaMB} Mo`}
+                </span>
               </div>
               <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                 <div
@@ -802,8 +875,53 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 />
               </div>
               <p className="text-[11px] text-slate-500">
-                Toutes vos données restent enregistrées localement sur cet appareil.
+                Vos audios, vidéos, photos et données sont stockés dans IndexedDB haute capacité sur cet appareil.
               </p>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {!storageStats.persisted && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const ok = await dbService.requestPersistentStorage();
+                      const stats = await dbService.getStorageEstimate();
+                      setStorageStats(stats);
+                      setStorageActionMessage(
+                        ok
+                          ? 'Mémoire persistante haute capacité activée.'
+                          : 'La mémoire maximale disponible sur ce navigateur est déjà allouée.'
+                      );
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Activer la mémoire étendue</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const count = await dbService.purgeOrphanMediaBlobs();
+                    const stats = await dbService.getStorageEstimate();
+                    setStorageStats(stats);
+                    setStorageActionMessage(
+                      count > 0
+                        ? `${count} fichier(s) résiduel(s) nettoyé(s) pour libérer de la mémoire.`
+                        : 'Mémoire déjà propre et optimisée.'
+                    );
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold"
+                >
+                  Optimiser la mémoire
+                </button>
+              </div>
+
+              {storageActionMessage && (
+                <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                  {storageActionMessage}
+                </p>
+              )}
             </div>
           </div>
 

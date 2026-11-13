@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Users,
   Plus,
@@ -34,9 +34,11 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [showVcfPromptInStatus, setShowVcfPromptInStatus] = useState(false);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [modalNotice, setModalNotice] = useState<string | null>(null);
   const [form, setForm] = useState<{
     firstName: string;
     lastName: string;
@@ -58,7 +60,10 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
   });
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isExportConfirmOpen, setIsExportConfirmOpen] = useState(false);
+
+  const vcfImportRef = useRef<HTMLInputElement | null>(null);
 
   const CATEGORIES: { id: ContactCategory; label: string }[] = [
     { id: 'famille', label: 'Famille' },
@@ -100,6 +105,7 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
 
   const handleOpenAdd = () => {
     setEditingContact(null);
+    setModalNotice(null);
     setForm({
       firstName: '',
       lastName: '',
@@ -115,6 +121,7 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
 
   const handleOpenEdit = (c: Contact) => {
     setEditingContact(c);
+    setModalNotice(null);
     setForm({
       firstName: c.firstName,
       lastName: c.lastName,
@@ -153,7 +160,19 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
   const handleDelete = async () => {
     if (!deletingId) return;
     await dbService.deleteItem(STORES.CONTACTS, deletingId);
+    setSelectedContactIds((prev) => prev.filter((id) => id !== deletingId));
     setDeletingId(null);
+    reloadData();
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    if (selectedContactIds.length === 0) return;
+    const count = selectedContactIds.length;
+    await dbService.deleteItems(STORES.CONTACTS, selectedContactIds);
+    setSelectedContactIds([]);
+    setIsBulkDeleteOpen(false);
+    setStatusMessage(`${count} contact(s) supprimé(s).`);
+    setShowVcfPromptInStatus(false);
     reloadData();
   };
 
@@ -180,6 +199,7 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
     document.body.removeChild(link);
     setIsExportConfirmOpen(false);
     setStatusMessage(`${contacts.length} contact(s) exporté(s) au format CSV.`);
+    setShowVcfPromptInStatus(false);
   };
 
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -190,6 +210,7 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
       setStatusMessage(
         `${addedCount} nouveau(x) contact(s) importé(s) (${importedContacts.length} traité(s)).`
       );
+      setShowVcfPromptInStatus(false);
       reloadData();
     } else {
       setStatusMessage('Aucun contact valide trouvé dans ce fichier.');
@@ -198,10 +219,35 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
   };
 
   const handlePickFromPhone = async () => {
-    const res = await pickContactsFromDevice(contacts);
+    setShowVcfPromptInStatus(false);
+    const res = await pickContactsFromDevice(contacts, { multiple: true });
     if (res.message) setStatusMessage(res.message);
-    if (res.status === 'success' && res.addedCount > 0) {
+    if (res.status === 'unsupported' || res.status === 'iframe_blocked') {
+      setShowVcfPromptInStatus(true);
+    }
+    if (res.status === 'success' && res.contacts.length > 0) {
       reloadData();
+    }
+  };
+
+  const handlePickFromPhoneInsideModal = async () => {
+    setModalNotice(null);
+    const res = await pickContactsFromDevice(contacts, { multiple: false });
+    if (res.status === 'success' && res.contacts.length > 0) {
+      const picked = res.contacts[0];
+      setForm((prev) => ({
+        ...prev,
+        firstName: picked.firstName || prev.firstName,
+        lastName: picked.lastName || prev.lastName,
+        phone: picked.phone || prev.phone,
+        email: picked.email || prev.email,
+      }));
+      // Keep the record or allow user to refine it on save
+      setEditingContact(picked);
+      setModalNotice('Contact sélectionné depuis le répertoire du téléphone. Complétez si besoin et enregistrez.');
+      reloadData();
+    } else if (res.message) {
+      setModalNotice(res.message);
     }
   };
 
@@ -233,16 +279,22 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
           <button
             type="button"
             onClick={handlePickFromPhone}
-            className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5"
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
           >
             <Smartphone className="w-3.5 h-3.5" />
-            <span>Répertoire tél.</span>
+            <span>Ajouter depuis le répertoire tél.</span>
           </button>
 
           <label className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer">
             <Upload className="w-3.5 h-3.5" />
-            <span>Importer CSV / .vcf</span>
-            <input type="file" accept=".csv,.vcf" onChange={handleImportFile} className="hidden" />
+            <span>Importer .vcf / CSV</span>
+            <input
+              ref={vcfImportRef}
+              type="file"
+              accept=".csv,.vcf,text/vcard"
+              onChange={handleImportFile}
+              className="hidden"
+            />
           </label>
 
           <button
@@ -267,18 +319,29 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
       </div>
 
       {statusMessage && (
-        <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 text-xs text-blue-900 dark:text-blue-200 flex items-center justify-between gap-3">
+        <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 text-xs text-blue-900 dark:text-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <span className="flex items-center gap-2">
             <Info className="w-4 h-4 shrink-0" />
             <span>{statusMessage}</span>
           </span>
-          <button
-            type="button"
-            onClick={() => setStatusMessage(null)}
-            className="font-bold underline shrink-0"
-          >
-            Fermer
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {showVcfPromptInStatus && (
+              <button
+                type="button"
+                onClick={() => vcfImportRef.current?.click()}
+                className="px-2.5 py-1 rounded-lg bg-blue-700 text-white font-bold"
+              >
+                Choisir un fichier .vcf
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setStatusMessage(null)}
+              className="font-bold underline"
+            >
+              Fermer
+            </button>
+          </div>
         </div>
       )}
 
@@ -309,7 +372,7 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={handleSelectAll}
@@ -322,6 +385,17 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
             )}
             <span>Tout cocher ({selectedContactIds.length})</span>
           </button>
+
+          {selectedContactIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsBulkDeleteOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Supprimer ({selectedContactIds.length})</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -446,7 +520,7 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
                 : 'Aucun contact ne correspond à votre recherche.'}
             </p>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Utilisez les boutons ci-dessus pour ouvrir le répertoire de votre téléphone, importer un fichier .vcf/.csv ou ajouter un contact manuellement.
+              Cliquez sur « Ajouter depuis le répertoire tél. » pour sélectionner un contact directement sur votre téléphone, importez un fichier .vcf ou ajoutez-le manuellement.
             </p>
           </div>
         )}
@@ -458,6 +532,24 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
         title={editingContact ? 'Modifier le Contact' : 'Nouveau Contact'}
       >
         <form onSubmit={handleSave} className="space-y-3 text-xs">
+          {!editingContact && (
+            <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 space-y-2">
+              <button
+                type="button"
+                onClick={handlePickFromPhoneInsideModal}
+                className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2 transition"
+              >
+                <Smartphone className="w-4 h-4" />
+                <span>Sélectionner dans le répertoire du téléphone</span>
+              </button>
+              {modalNotice && (
+                <p className="text-[11px] text-emerald-900 dark:text-emerald-200 leading-relaxed">
+                  {modalNotice}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold mb-1">Prénom *</label>
@@ -486,7 +578,7 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
               <input
                 type="tel"
                 required
-                placeholder="+33 6..."
+                placeholder="Numéro avec indicatif pays"
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
                 className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
@@ -575,6 +667,16 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
         isDestructive
         onConfirm={handleDelete}
         onCancel={() => setDeletingId(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={isBulkDeleteOpen}
+        title="Supprimer les contacts sélectionnés ?"
+        message={`Cette action supprimera définitivement ${selectedContactIds.length} contact(s) sélectionné(s).`}
+        confirmLabel="Oui, supprimer en masse"
+        isDestructive
+        onConfirm={handleConfirmBulkDelete}
+        onCancel={() => setIsBulkDeleteOpen(false)}
       />
     </div>
   );
