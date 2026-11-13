@@ -1,0 +1,1145 @@
+# PROMPT MAÎTRE — CRÉATION DE SHALOM
+## PLATEFORME CHRÉTIENNE COMPLÈTE — APPLICATION WEB CONVERTIBLE EN APK ANDROID
+
+# 1. TA MISSION
+
+Tu es une équipe professionnelle composée de :
+- Un architecte logiciel senior.
+- Des développeurs React et TypeScript expérimentés.
+- Des spécialistes UX/UI mobile.
+- Des experts en bases de données locales.
+- Des experts en applications Web progressives (PWA).
+- Des spécialistes de la sécurité et de la confidentialité.
+- Des développeurs spécialisés dans les applications WebView Android.
+
+Ta mission est de concevoir et de développer une application Web complète, professionnelle, moderne et réellement fonctionnelle appelée SHALOM.
+
+SHALOM est une plateforme chrétienne destinée à accompagner les croyants dans leur vie spirituelle et à faciliter l'organisation et le fonctionnement des églises.
+
+ATTENTION : SHALOM sera convertie en application Android grâce à Website 2 APK Builder. Tu dois donc développer une application Web responsive, optimisée pour les téléphones Android et compatible avec un affichage WebView.
+
+Ne développe PAS une application Android native Kotlin.
+Ne développe PAS un simple site vitrine.
+Ne crée PAS une maquette interactive sans véritable logique.
+Ne crée PAS uniquement des écrans avec des boutons décoratifs.
+
+Je veux un véritable produit logiciel exploitable, avec des données persistantes, des formulaires opérationnels, des recherches, des modifications, des suppressions, des calculs, des historiques et des mécanismes de sauvegarde.
+
+Toutes les fonctionnalités doivent être réellement implémentées.
+
+# 2. IDENTITÉ DE SHALOM
+
+Nom : SHALOM
+
+Signification : paix, harmonie, plénitude et bien-être.
+
+Référence biblique : Jean 14:27.
+
+Signature officielle :
+
+« La foi au quotidien, la paix dans la communion. »
+
+Positionnement :
+
+SHALOM est une plateforme qui réunit les outils nécessaires à la vie spirituelle personnelle et à l'organisation pratique de la vie d'une communauté chrétienne.
+
+Elle doit répondre aux besoins :
+- Des chrétiens ordinaires.
+- Des nouveaux convertis.
+- Des pasteurs.
+- Des prédicateurs.
+- Des enseignants bibliques.
+- Des responsables d'église.
+- Des responsables de groupes de prière.
+- Des responsables de départements.
+- Des bénévoles.
+- Des responsables de l'accueil et du suivi des fidèles.
+
+SHALOM ne doit jamais être réservée exclusivement aux pasteurs ou aux responsables d'église.
+
+# 3. ARCHITECTURE TECHNIQUE OBLIGATOIRE
+
+Développer une application Web moderne avec :
+
+- React.
+- TypeScript.
+- Vite.
+- HTML5.
+- CSS moderne.
+- Tailwind CSS si cela améliore la cohérence du design.
+- Lucide React pour les icônes.
+- IndexedDB pour les données persistantes.
+- LocalStorage pour les préférences simples.
+- Service Worker pour le fonctionnement hors ligne.
+- Web App Manifest pour la configuration PWA.
+
+L'application doit être conçue pour être hébergée sur un service de déploiement Web statique compatible HTTPS, puis ouverte à partir de son URL dans Website 2 APK Builder.
+
+## Architecture sans serveur obligatoire
+
+Les fonctions principales doivent fonctionner sans backend distant.
+
+Ne rends pas Firebase, Supabase, Google Cloud ou un autre serveur indispensable au fonctionnement de l'application.
+
+Ne rends pas une connexion Internet permanente obligatoire.
+
+Les données doivent être conservées localement sur l'appareil.
+
+Utilise IndexedDB comme stockage principal pour :
+- Les membres.
+- Les contacts.
+- Les demandes de prière.
+- Les notes.
+- Les annonces.
+- Les événements.
+- Les bénévoles.
+- Les plannings.
+- Les métadonnées des fichiers.
+- Les historiques.
+- Les préférences.
+
+Utilise le stockage local pour les fichiers lorsque les capacités du navigateur le permettent.
+
+Ne stocke pas les gros fichiers audio et vidéo dans LocalStorage.
+
+Prévoir une architecture de stockage des médias avec gestion de l'espace disponible, des erreurs et des suppressions.
+
+## IMPORTANT : LIMITATIONS DU WEBVIEW
+
+Le site sera affiché dans un conteneur WebView Android.
+
+Tu dois donc :
+- Privilégier les API Web largement compatibles.
+- Vérifier les fonctionnalités disponibles avant de les utiliser.
+- Éviter les dépendances aux API expérimentales.
+- Ne jamais prétendre qu'une permission Android est accordée simplement parce que le navigateur affiche un écran de demande.
+- Prévoir des messages d'erreur compréhensibles.
+- Ne jamais simuler une fonction qui nécessite un pont natif absent.
+- Ne jamais bloquer l'application lorsqu'une permission est refusée.
+
+Les fonctionnalités microphone, caméra, partage, téléchargement, notifications et ouverture d'applications externes doivent être testées dans le WebView réel de Website 2 APK Builder.
+
+Si une fonctionnalité n'est pas réalisable dans ce contexte, explique la limitation et propose une solution compatible plutôt que de créer un faux bouton.
+
+# 4. DESIGN ET EXPÉRIENCE UTILISATEUR
+
+Créer un design de qualité commerciale.
+
+L'application doit être visuellement comparable aux meilleures applications mobiles modernes.
+
+## Identité visuelle
+
+Couleur principale : bleu profond.
+
+Couleur secondaire : bleu clair.
+
+Couleur d'accent : doré discret.
+
+Fonds : blanc cassé, blanc et gris très clair.
+
+Mode sombre : disponible.
+
+Typographie : moderne, élégante et très lisible.
+
+Utiliser :
+- Des cartes modernes.
+- Des coins arrondis.
+- Des icônes cohérentes.
+- Des animations discrètes.
+- Des ombres légères.
+- Des espaces équilibrés.
+- Des boutons clairement identifiables.
+- Des formulaires bien structurés.
+- Des menus simples.
+- Des indicateurs visuels de statut.
+
+Éviter :
+- Les textes coupés.
+- Les boutons trop petits.
+- Les écrans surchargés.
+- Les couleurs agressives.
+- Les tableaux illisibles sur téléphone.
+- Les fenêtres qui débordent de l'écran.
+- Les menus difficiles à utiliser.
+
+## Responsive design
+
+Priorité absolue aux smartphones Android.
+
+L'application doit également fonctionner sur :
+- Tablettes.
+- Ordinateurs Windows.
+- Navigateurs mobiles.
+
+Sur téléphone, prévoir une navigation inférieure ou un menu adapté au tactile.
+
+Sur ordinateur, prévoir une navigation latérale.
+
+Tous les écrans doivent s'adapter correctement aux différentes dimensions.
+
+## Langue
+
+Français comme langue par défaut.
+
+Préparer la structure pour ajouter ultérieurement l'anglais et d'autres langues.
+
+# 5. STRUCTURE GÉNÉRALE DE L'APPLICATION
+
+Créer les sections suivantes :
+
+1. Accueil.
+2. Vie spirituelle.
+3. Vie de l'Église.
+4. Bibliothèque.
+5. Contacts.
+6. Paramètres.
+
+Organiser les fonctionnalités dans des sous-menus intuitifs.
+
+L'utilisateur doit pouvoir accéder rapidement à chaque fonction.
+
+Créer un tableau de bord dynamique affichant :
+- Message d'accueil.
+- Date du jour.
+- Raccourcis.
+- Activités récentes.
+- Prochains événements.
+- Rappels.
+- Demandes de prière récentes.
+- Dernières paroles enregistrées.
+- Indicateurs réels de l'activité.
+
+Les indicateurs doivent toujours provenir des données enregistrées.
+
+Ne jamais afficher de fausses statistiques.
+
+# 6. MODE PERSONNEL ET MODE ÉGLISE
+
+SHALOM doit fonctionner dans deux contextes.
+
+## Mode personnel
+
+Pour les personnes qui veulent utiliser l'application individuellement.
+
+Fonctions disponibles :
+- Bible.
+- Études bibliques.
+- Notes spirituelles.
+- Journal de prière.
+- Demandes de prière personnelles.
+- Témoignages.
+- Plans de lecture.
+- Bibliothèque personnelle de prédications.
+- Enregistrements personnels.
+- Rappels spirituels.
+
+Aucune création d'église ne doit être obligatoire.
+
+## Mode église
+
+Permet de configurer un espace local pour organiser une communauté.
+
+Informations :
+- Nom de l'église.
+- Logo.
+- Adresse.
+- Téléphone.
+- Responsable principal.
+- Départements.
+- Membres.
+- Bénévoles.
+
+L'utilisateur doit pouvoir passer du mode personnel au mode église sans perdre ses données.
+
+Les données personnelles et celles de l'église doivent rester clairement séparées.
+
+ATTENTION : dans une architecture locale sans serveur, les données d'une installation ne sont pas automatiquement synchronisées avec les autres téléphones. Ne présente jamais cette fonctionnalité comme une synchronisation collaborative en temps réel.
+
+# 7. MODULE VIE DE PRIÈRE
+
+Créer un véritable espace de gestion de la vie de prière.
+
+## A. Journal de prière
+
+Permettre de :
+- Ajouter une prière.
+- Donner un titre.
+- Rédiger une description.
+- Indiquer la date.
+- Choisir une catégorie.
+- Ajouter une référence biblique.
+- Ajouter des notes.
+- Définir un rappel.
+- Modifier.
+- Supprimer.
+- Archiver.
+
+Catégories :
+- Prière personnelle.
+- Famille.
+- Santé.
+- Travail.
+- Études.
+- Finances.
+- Église.
+- Relations.
+- Reconnaissance.
+- Intercession.
+- Autre.
+
+## B. Demandes de prière
+
+Créer un système complet.
+
+Chaque demande comprend :
+- Titre.
+- Description.
+- Date de création.
+- Auteur.
+- Catégorie.
+- Niveau de confidentialité.
+- Personnes autorisées.
+- Date de prochain suivi.
+- Historique des évolutions.
+
+Statuts :
+- Nouvelle.
+- En prière.
+- En attente.
+- En évolution.
+- Exaucée.
+- Archivée.
+
+La demande est privée par défaut.
+
+L'utilisateur choisit précisément les personnes autorisées à recevoir les informations.
+
+## C. Groupes de prière
+
+Permettre :
+- Créer un groupe.
+- Nommer le groupe.
+- Ajouter des membres.
+- Retirer des membres.
+- Associer des demandes de prière.
+- Consulter les informations partagées localement.
+- Préparer des messages destinés aux membres.
+
+Lorsqu'une demande évolue, permettre de préparer un message contenant la mise à jour et de le transmettre aux membres autorisés.
+
+Ne pas prétendre que les membres reçoivent automatiquement la mise à jour : sans serveur, la transmission se fait par les applications de partage externes.
+
+## D. Témoignages
+
+Permettre de :
+- Enregistrer une prière exaucée.
+- Rédiger le témoignage.
+- Ajouter une date.
+- Ajouter une référence biblique.
+- Ajouter une photo facultative.
+- Classer les témoignages.
+- Partager un témoignage.
+
+# 8. MODULE SUIVI DES ABSENTS ET VISITEURS
+
+Créer un système professionnel de suivi pastoral.
+
+## A. Suivi des absents
+
+Permettre :
+- Enregistrer les membres.
+- Identifier les absents après chaque culte.
+- Sélectionner plusieurs contacts.
+- Enregistrer la dernière présence.
+- Compter les absences.
+- Identifier les absences occasionnelles.
+- Identifier les absences prolongées.
+- Attribuer un responsable de suivi.
+- Ajouter des observations.
+- Enregistrer les réponses.
+- Programmer les prochaines relances.
+- Consulter l'historique.
+
+Prévoir une liste de suivi avec filtres :
+- À contacter.
+- Contacté.
+- En attente de réponse.
+- Réponse reçue.
+- Nouvelle relance nécessaire.
+- Suivi terminé.
+
+## B. Suivi des visiteurs
+
+Chaque visiteur possède une fiche :
+- Nom.
+- Prénom.
+- Téléphone.
+- Date de première visite.
+- Responsable de l'accueil.
+- Motif ou observations facultatives.
+- Dates des visites suivantes.
+- Historique des contacts.
+- Prochaine relance.
+- Statut du suivi.
+
+Permettre d'identifier les visiteurs qui deviennent membres.
+
+Prévoir des modèles de messages de bienvenue et de remerciement.
+
+# 9. MODULE PAROLE DIVINE
+
+C'est l'un des modules les plus importants de SHALOM.
+
+Créer une véritable bibliothèque d'enregistrements audio et vidéo.
+
+## A. Nouvelle parole
+
+Créer un bouton « Nouvelle parole ».
+
+À l'ouverture, afficher un formulaire comprenant :
+
+Type :
+- Prédication.
+- Exhortation.
+- Enseignement.
+
+Informations :
+- Date et heure automatiques.
+- Nom du modérateur.
+- Nom du prédicateur ou enseignant.
+- Thème.
+- Genre d'activité.
+- Référence biblique.
+- Notes facultatives.
+
+Genres d'activités :
+- Culte dominical.
+- Culte d'enseignement.
+- Réunion de prière.
+- Séminaire.
+- Veillée.
+- Convention.
+- Conférence.
+- Formation.
+- Réunion spéciale.
+- Autre.
+
+## B. Choix du mode d'enregistrement
+
+Afficher deux choix :
+
+1. Audio uniquement.
+2. Vidéo.
+
+## C. Enregistrement audio
+
+Utiliser les API Web compatibles, notamment MediaRecorder lorsque disponibles.
+
+Prévoir :
+- Demande de permission microphone.
+- Démarrage.
+- Pause.
+- Reprise.
+- Arrêt.
+- Chronomètre.
+- Indicateur d'enregistrement.
+- Confirmation avant abandon.
+- Enregistrement du fichier.
+- Association des métadonnées.
+- Lecture du résultat.
+
+L'enregistrement audio doit être réalisé au premier plan dans le navigateur.
+
+Ne promets pas un enregistrement audio continu lorsque le WebView est en arrière-plan ou lorsque le téléphone verrouille l'écran. Ce comportement doit être considéré comme non garanti sans intégration native spécifique.
+
+Afficher un avertissement si l'utilisateur risque de perdre son enregistrement en quittant la page.
+
+## D. Enregistrement vidéo
+
+Utiliser les API caméra compatibles, notamment getUserMedia et MediaRecorder lorsque disponibles.
+
+Prévoir :
+- Sélection de caméra avant ou arrière si possible.
+- Aperçu vidéo.
+- Démarrage.
+- Arrêt.
+- Durée.
+- Enregistrement du fichier.
+- Lecture du résultat.
+
+L'enregistrement vidéo se fait au premier plan.
+
+Ne prétends pas que la caméra continue de filmer lorsque l'utilisateur quitte l'application.
+
+## E. Bibliothèque Parole divine
+
+Classer automatiquement :
+- Prédications.
+- Exhortations.
+- Enseignements.
+
+Permettre :
+- Recherche par thème.
+- Recherche par prédicateur.
+- Recherche par date.
+- Filtrage par activité.
+- Écoute.
+- Lecture vidéo.
+- Renommage.
+- Modification des métadonnées.
+- Ajout de notes.
+- Partage.
+- Suppression avec confirmation.
+
+Prévoir un indicateur d'espace de stockage et des avertissements avant les enregistrements volumineux.
+
+Les fichiers doivent rester accessibles après fermeture et réouverture de l'application dans la mesure permise par le stockage du navigateur et du WebView.
+
+# 10. MODULE BIBLE
+
+Créer une section biblique complète.
+
+Fonctions :
+- Choisir un livre.
+- Choisir un chapitre.
+- Afficher les versets.
+- Recherche de passages.
+- Recherche par mot.
+- Favoris.
+- Marque-pages.
+- Notes personnelles.
+- Historique.
+- Plans de lecture.
+- Thèmes bibliques.
+- Progression de lecture.
+- Études personnelles.
+
+Prévoir une utilisation hors ligne.
+
+IMPORTANT : ne pas intégrer de traduction biblique protégée sans autorisation de redistribution.
+
+Prévoir un système permettant d'ajouter des fichiers bibliques légalement utilisables.
+
+La consultation de la Bible doit pouvoir se faire sans interrompre une activité audio lorsque le navigateur et l'appareil maintiennent effectivement l'enregistrement au premier plan.
+
+# 11. MODULE ÉTUDES BIBLIQUES
+
+Créer un espace permettant de préparer et d'organiser des études.
+
+Une étude comprend :
+- Titre.
+- Sujet.
+- Objectif.
+- Texte biblique principal.
+- Introduction.
+- Développement.
+- Explications.
+- Questions.
+- Applications pratiques.
+- Conclusion.
+- Notes personnelles.
+
+Permettre :
+- Créer.
+- Modifier.
+- Supprimer.
+- Classer.
+- Rechercher.
+- Exporter.
+- Imprimer.
+- Partager.
+
+Créer des modèles d'études bibliques.
+
+# 12. MODULE BÉNÉVOLES ET DÉPARTEMENTS
+
+Créer une gestion complète des équipes.
+
+Départements possibles :
+- Louange.
+- Accueil.
+- Protocole.
+- Intercession.
+- Évangélisation.
+- Communication.
+- Technique et sonorisation.
+- Enseignement.
+- Entretien.
+- Sécurité.
+- Autres.
+
+Chaque bénévole possède :
+- Nom.
+- Prénom.
+- Téléphone.
+- Département.
+- Fonction.
+- Compétences.
+- Disponibilités.
+- Observations.
+- Historique de service.
+
+## Planning
+
+Permettre :
+- Créer un planning.
+- Choisir une date.
+- Définir les horaires.
+- Sélectionner un département.
+- Affecter les bénévoles.
+- Définir leurs fonctions.
+- Enregistrer les absences.
+- Organiser les remplacements.
+- Ajouter des commentaires.
+
+Prévoir des vues :
+- Journalière.
+- Hebdomadaire.
+- Mensuelle.
+- Par département.
+- Par bénévole.
+
+Permettre l'impression et l'exportation.
+
+# 13. MODULE ANNONCES
+
+Créer un espace de communication.
+
+Catégories :
+- Informations générales.
+- Changements d'horaires.
+- Programmes.
+- Réunions.
+- Annonces urgentes.
+- Informations aux responsables.
+- Informations aux bénévoles.
+
+Chaque annonce possède :
+- Titre.
+- Contenu.
+- Date.
+- Catégorie.
+- Destinataires.
+- Pièce jointe facultative.
+- Statut.
+
+Permettre :
+- Créer.
+- Modifier.
+- Archiver.
+- Supprimer.
+- Rechercher.
+- Préparer le partage.
+- Consulter l'historique.
+
+Les annonces doivent pouvoir être partagées par WhatsApp, SMS ou les autres applications disponibles.
+
+Ne pas prétendre les diffuser automatiquement à tous les téléphones.
+
+# 14. MODULE ÉVÉNEMENTS
+
+Créer un outil de gestion des activités de l'église.
+
+Types :
+- Séminaires.
+- Conventions.
+- Retraites.
+- Veillées.
+- Conférences.
+- Formations.
+- Réunions.
+- Cultes spéciaux.
+
+Chaque événement comprend :
+- Nom.
+- Description.
+- Date de début.
+- Date de fin.
+- Heure.
+- Lieu.
+- Responsable.
+- Programme.
+- Intervenants.
+- Bénévoles.
+- Participants.
+- Présences.
+- Observations.
+- Rapport final.
+
+Permettre :
+- Créer.
+- Modifier.
+- Supprimer.
+- Rechercher.
+- Consulter le calendrier.
+- Enregistrer les présences.
+- Exporter les informations.
+- Générer un compte rendu.
+- Partager l'événement.
+
+Prévoir des rappels locaux lorsque les capacités du navigateur le permettent.
+
+# 15. MODULE CONTACTS
+
+Créer un répertoire organisé.
+
+Chaque contact comprend :
+- Nom.
+- Prénom.
+- Téléphone.
+- Email facultatif.
+- Catégorie.
+- Groupe.
+- Notes.
+
+Catégories :
+- Membres.
+- Visiteurs.
+- Responsables.
+- Bénévoles.
+- Prédicateurs.
+- Contacts personnels.
+- Autres.
+
+Permettre :
+- Ajouter.
+- Modifier.
+- Supprimer.
+- Rechercher.
+- Filtrer.
+- Importer depuis un fichier CSV.
+- Exporter.
+- Associer un contact à plusieurs groupes.
+
+Ne demande pas automatiquement l'accès à tous les contacts du téléphone.
+
+Prévoir une saisie manuelle et une importation de contacts par fichier.
+
+# 16. MODULE WHATSAPP ET SMS
+
+Créer une fonctionnalité de partage en série.
+
+L'utilisateur peut :
+- Sélectionner un ou plusieurs contacts.
+- Rédiger un message.
+- Choisir un modèle.
+- Modifier le message.
+- Sélectionner WhatsApp ou SMS.
+
+## Workflow
+
+Pour chaque contact :
+
+1. Préparer le message.
+2. Ouvrir WhatsApp avec le destinataire et le texte prérempli lorsque possible.
+3. L'utilisateur vérifie et confirme manuellement l'envoi.
+4. Il revient dans SHALOM.
+5. Afficher une question : « Le message a-t-il été envoyé ? »
+6. Enregistrer la réponse de l'utilisateur.
+7. Passer au contact suivant.
+
+Si l'utilisateur choisit SMS, ouvrir l'application SMS disponible avec le numéro et le texte préremplis lorsque le système le permet.
+
+Ne jamais envoyer de message silencieusement.
+
+Ne jamais considérer l'ouverture de WhatsApp comme une preuve d'envoi.
+
+Statuts :
+- En attente.
+- Ouvert.
+- Confirmé envoyé par l'utilisateur.
+- Ignoré.
+- Annulé.
+- Échec signalé.
+
+Prévoir un écran de suivi de campagne permettant de savoir quels contacts ont été traités.
+
+Utiliser les mécanismes de partage compatibles avec les navigateurs et WebView, notamment les liens d'application ou les mécanismes de partage pris en charge.
+
+Si une fonction n'est pas disponible dans le WebView, afficher une solution alternative.
+
+# 17. MODULE MODÈLES DE MESSAGES
+
+Créer une bibliothèque de messages prêts à personnaliser.
+
+Catégories :
+- Encouragement.
+- Condoléances.
+- Anniversaire.
+- Remerciement.
+- Suivi des absents.
+- Accueil des visiteurs.
+- Demande de prière.
+- Invitation au culte.
+- Annonce urgente.
+- Message pastoral.
+- Témoignage.
+- Invitation à un événement.
+
+Chaque modèle doit pouvoir être modifié avant partage.
+
+Prévoir des champs personnalisables comme le prénom, la date, le nom de l'église et le thème.
+
+Ne pas envoyer de messages sans intervention humaine.
+
+# 18. MODULE CALENDRIER ET RAPPELS
+
+Créer un calendrier visuel permettant de consulter :
+- Cultes.
+- Réunions.
+- Événements.
+- Services des bénévoles.
+- Relances des absents.
+- Suivis des visiteurs.
+- Rappels personnels.
+- Dates de suivi des prières.
+
+Prévoir les vues jour, semaine et mois.
+
+Permettre d'ajouter, modifier et supprimer un rappel.
+
+Les rappels doivent fonctionner avec les mécanismes réellement disponibles dans le navigateur et le WebView.
+
+Ne pas promettre des notifications fiables lorsque l'application est complètement fermée si l'environnement ne les prend pas en charge.
+
+# 19. MODULE PROFIL ET PARAMÈTRES
+
+Créer une interface de configuration.
+
+Paramètres :
+- Profil utilisateur.
+- Nom de l'église.
+- Logo.
+- Adresse.
+- Téléphone.
+- Responsable.
+- Mode personnel ou mode église.
+- Mode clair ou sombre.
+- Langue.
+- Préférences.
+- Verrouillage PIN.
+- Gestion du stockage.
+- Exportation.
+- Restauration.
+- Informations sur l'application.
+
+Prévoir un profil local sans compte obligatoire.
+
+Le code PIN doit être utilisé pour protéger l'accès à certaines informations personnelles, avec une mise en œuvre sécurisée adaptée au stockage local. Ne jamais enregistrer le code en clair.
+
+# 20. SAUVEGARDE ET RESTAURATION
+
+Créer un système de sauvegarde complet.
+
+L'utilisateur doit pouvoir :
+- Créer une sauvegarde.
+- Télécharger le fichier.
+- Choisir d'inclure les médias.
+- Restaurer une sauvegarde.
+- Vérifier le contenu.
+- Contrôler la compatibilité.
+- Détecter les doublons.
+- Prévenir avant remplacement des données.
+
+Prévoir un format ZIP ou un format structuré documenté.
+
+Inclure :
+- Données.
+- Métadonnées.
+- Paramètres.
+- Références des médias.
+- Fichiers audio et vidéo lorsque sélectionnés.
+
+Prévoir une vérification de l'intégrité des fichiers.
+
+Afficher la date de la dernière sauvegarde.
+
+Ne jamais supprimer les données existantes avant de vérifier que la restauration est valide.
+
+# 21. BASE DE DONNÉES LOCALE
+
+Concevoir une architecture IndexedDB structurée.
+
+Prévoir des collections ou magasins distincts pour :
+- Profils.
+- Églises.
+- Membres.
+- Contacts.
+- Groupes.
+- Demandes de prière.
+- Évolutions des prières.
+- Témoignages.
+- Suivis.
+- Visiteurs.
+- Présences.
+- Bénévoles.
+- Départements.
+- Plannings.
+- Affectations.
+- Annonces.
+- Événements.
+- Participants.
+- Paroles enregistrées.
+- Fichiers multimédias.
+- Études bibliques.
+- Notes.
+- Favoris.
+- Plans de lecture.
+- Modèles de messages.
+- Historiques de partage.
+- Paramètres.
+
+Définir :
+- Identifiants uniques.
+- Relations.
+- Index.
+- Dates de création et de modification.
+- Règles de suppression.
+- Gestion des erreurs.
+- Versionnement du schéma.
+
+Prévoir des migrations pour les mises à jour.
+
+Les données doivent être enregistrées immédiatement après les opérations importantes.
+
+Ne jamais se limiter à des tableaux JavaScript temporaires qui disparaissent au rechargement.
+
+# 22. SÉCURITÉ ET CONFIDENTIALITÉ
+
+Protéger les informations personnelles.
+
+Principes :
+- Collecter uniquement les informations nécessaires.
+- Demander les permissions au moment de l'utilisation.
+- Ne jamais partager une demande privée automatiquement.
+- Prévoir confirmation avant suppression.
+- Prévoir verrouillage PIN.
+- Prévoir exportation et suppression des données.
+- Protéger les sauvegardes sensibles.
+- Éviter l'exposition des données dans les journaux techniques.
+
+Informer clairement l'utilisateur que les données locales peuvent être perdues si le stockage du navigateur ou de l'application est effacé et qu'aucune sauvegarde n'existe.
+
+Ne jamais prétendre qu'un stockage local équivaut à une synchronisation cloud ou à une sauvegarde automatique distante.
+
+# 23. FONCTIONNEMENT HORS LIGNE
+
+Créer une véritable PWA.
+
+Prévoir :
+- Manifest.
+- Service Worker.
+- Cache des ressources essentielles.
+- Page de démarrage hors ligne.
+- Gestion des mises à jour.
+- Vérification de la connexion.
+- Indicateur hors ligne.
+
+Les écrans et les données déjà enregistrés doivent rester accessibles hors ligne.
+
+Éviter les dépendances critiques chargées uniquement depuis des CDN.
+
+Embarquer les ressources essentielles dans le projet.
+
+Lorsqu'une connexion Internet est nécessaire pour une ressource externe, afficher clairement son indisponibilité.
+
+Le fonctionnement hors ligne doit être testé dans le navigateur puis dans l'APK.
+
+# 24. TABLEAU DE BORD ET STATISTIQUES
+
+Créer des indicateurs calculés à partir des données réelles.
+
+Exemples :
+- Nombre de membres enregistrés.
+- Nombre de visiteurs.
+- Nombre d'absents à suivre.
+- Demandes de prière actives.
+- Témoignages enregistrés.
+- Prochains événements.
+- Nombre de bénévoles.
+- Services planifiés.
+- Nombre de prédications archivées.
+
+Prévoir des graphiques modernes lorsque cela apporte une véritable valeur.
+
+Les statistiques doivent se mettre à jour après chaque opération.
+
+# 25. QUALITÉ ET FONCTIONNEMENT DES BOUTONS
+
+Règle absolue :
+
+AUCUN BOUTON INUTILE.
+
+Chaque bouton doit déclencher une véritable action.
+
+Pour chaque formulaire :
+- Validation des champs.
+- Messages d'erreur compréhensibles.
+- Confirmation de réussite.
+- Gestion des erreurs.
+- Enregistrement persistant.
+
+Pour chaque liste :
+- Recherche.
+- Filtres.
+- Tri.
+- Consultation.
+- Modification.
+- Suppression.
+
+Pour chaque suppression :
+- Demander confirmation.
+
+Pour chaque opération :
+- Éviter les doubles enregistrements.
+- Afficher les résultats réels.
+- Actualiser les vues concernées.
+
+Ne pas créer de boutons « Enregistrer » inutiles lorsque l'enregistrement peut être effectué automatiquement de manière fiable. Mais toujours donner un retour clair à l'utilisateur.
+
+# 26. ORGANISATION DU CODE
+
+Créer une architecture propre, modulaire et maintenable.
+
+Séparer :
+- Les composants.
+- Les pages.
+- Les services.
+- Les bases de données.
+- Les hooks.
+- Les modèles de données.
+- Les fonctions utilitaires.
+- Les mécanismes de stockage.
+- Les styles.
+- Les ressources.
+
+Prévoir des composants réutilisables.
+
+Éviter un fichier unique contenant toute l'application.
+
+Utiliser TypeScript avec des types cohérents.
+
+Gérer correctement les erreurs et les états de chargement.
+
+Ne pas laisser de données de démonstration dans les fonctions de production.
+
+# 27. TESTS OBLIGATOIRES
+
+Avant de déclarer le travail terminé, effectuer des tests fonctionnels.
+
+Tester :
+
+1. Création et modification d'un profil.
+2. Création et suppression d'un membre.
+3. Création d'une demande de prière.
+4. Modification du statut d'une prière.
+5. Création d'un témoignage.
+6. Enregistrement d'un visiteur.
+7. Suivi d'un absent.
+8. Création d'un bénévole.
+9. Création d'un planning.
+10. Création d'une annonce.
+11. Création d'un événement.
+12. Création d'une étude biblique.
+13. Création d'une parole audio.
+14. Enregistrement vidéo.
+15. Lecture des fichiers.
+16. Partage WhatsApp.
+17. Préparation d'un SMS.
+18. Exportation des données.
+19. Restauration.
+20. Fonctionnement hors ligne.
+21. Conservation des données après redémarrage.
+22. Affichage sur différentes tailles d'écran.
+
+Tester les fonctions sensibles dans le WebView Android de Website 2 APK Builder.
+
+Ne déclare pas un test réussi s'il n'a pas réellement été exécuté.
+
+# 28. LIVRABLES
+
+Je veux recevoir un projet complet comprenant :
+
+- Tous les fichiers sources.
+- Tous les composants.
+- Toutes les pages.
+- Toutes les fonctionnalités.
+- Les fichiers de configuration.
+- Les dépendances nécessaires.
+- Le système IndexedDB.
+- Le manifeste PWA.
+- Le Service Worker.
+- Les icônes et ressources.
+- Les instructions de lancement.
+- Les instructions de compilation.
+- Les instructions de déploiement.
+- Les instructions pour obtenir une URL publique HTTPS.
+- Les instructions pour convertir cette URL en APK avec Website 2 APK Builder.
+
+Le projet doit être facilement récupérable et modifiable.
+
+Prévoir une configuration permettant de changer le logo, le nom, les couleurs et les informations de l'application.
+
+# 29. MÉTHODE DE DÉVELOPPEMENT
+
+Ne construis pas uniquement une page d'accueil puis ne laisse pas les autres modules vides.
+
+Procède méthodiquement.
+
+Étape 1 : architecture générale, navigation, design et base de données.
+
+Étape 2 : profil, mode personnel, mode église et tableau de bord.
+
+Étape 3 : vie de prière, demandes et témoignages.
+
+Étape 4 : suivi des absents et visiteurs.
+
+Étape 5 : contacts et partage WhatsApp/SMS.
+
+Étape 6 : Parole divine et bibliothèque audio/vidéo.
+
+Étape 7 : Bible et études bibliques.
+
+Étape 8 : bénévoles et plannings.
+
+Étape 9 : annonces et événements.
+
+Étape 10 : calendrier et rappels.
+
+Étape 11 : sauvegarde, restauration et sécurité.
+
+Étape 12 : PWA, compatibilité WebView et tests.
+
+À chaque étape :
+- Implémente réellement les fonctionnalités.
+- Vérifie leur fonctionnement.
+- Corrige les erreurs.
+- Préserve les fonctions déjà développées.
+- Ne remplace pas une fonction existante par une version simplifiée sans autorisation.
+- Ne détruis pas les données enregistrées pendant les mises à jour.
+
+Si tu ne peux pas réaliser toutes les étapes dans une seule génération, construis un socle fonctionnel et poursuis les étapes suivantes sans supprimer ce qui a déjà été réalisé.
+
+# 30. EXIGENCES FINALES
+
+Le résultat attendu est une application appelée SHALOM, belle, moderne, complète, rapide, facile à utiliser et réellement opérationnelle.
+
+Elle doit être utilisable par un chrétien seul comme par une communauté chrétienne qui souhaite organiser ses activités.
+
+Elle doit fonctionner hors ligne autant que possible.
+
+Elle ne doit pas dépendre d'un abonnement ou d'un serveur permanent.
+
+Elle doit pouvoir être déployée sur une URL publique HTTPS et convertie en APK avec Website 2 APK Builder.
+
+Ne me livre pas une simple maquette.
+
+Ne me livre pas des boutons qui ne font rien.
+
+Ne me livre pas des fonctionnalités simulées.
+
+Ne prétends pas avoir testé des fonctions qui ne l'ont pas été.
+
+Privilégie toujours la fiabilité, la qualité du code, la sécurité des données, l'expérience utilisateur et le fonctionnement réel.
+
+COMMENCE MAINTENANT PAR CONSTRUIRE SHALOM.
