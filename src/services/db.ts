@@ -36,7 +36,30 @@ class ShalomDB {
     if (this.dbPromise) return this.dbPromise;
 
     this.dbPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      if (typeof indexedDB === 'undefined') {
+        this.dbPromise = null;
+        reject(new Error('IndexedDB non disponible sur ce navigateur.'));
+        return;
+      }
+
+      let settled = false;
+      const timeoutId = window.setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          this.dbPromise = null;
+          reject(new Error('Délai dépassé lors de l’ouverture du stockage local.'));
+        }
+      }, 3000);
+
+      let request: IDBOpenDBRequest;
+      try {
+        request = indexedDB.open(DB_NAME, DB_VERSION);
+      } catch (err) {
+        clearTimeout(timeoutId);
+        this.dbPromise = null;
+        reject(err);
+        return;
+      }
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
@@ -48,6 +71,9 @@ class ShalomDB {
       };
 
       request.onsuccess = async () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
         const db = request.result;
         db.onversionchange = () => {
           db.close();
@@ -63,11 +89,17 @@ class ShalomDB {
       };
 
       request.onblocked = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
         this.dbPromise = null;
         reject(new Error('IndexedDB bloqué par un autre onglet.'));
       };
 
       request.onerror = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
         this.dbPromise = null;
         reject(new Error(`Erreur d'ouverture d'IndexedDB: ${request.error?.message}`));
       };
@@ -233,7 +265,11 @@ class ShalomDB {
   }
 
   private async removeLegacyDemoContacts(db: IDBDatabase): Promise<void> {
-    if (localStorage.getItem('shalom_cleaned_demo_contacts_v1')) return;
+    try {
+      if (localStorage.getItem('shalom_cleaned_demo_contacts_v1')) return;
+    } catch {
+      // ignore restricted localStorage
+    }
     await new Promise<void>((resolve) => {
       const tx = db.transaction(STORES.CONTACTS, 'readwrite');
       const store = tx.objectStore(STORES.CONTACTS);
@@ -249,7 +285,11 @@ class ShalomDB {
       checkAndDelete('c_1', '+33612345678');
       checkAndDelete('c_2', '+33687654321');
       tx.oncomplete = () => {
-        localStorage.setItem('shalom_cleaned_demo_contacts_v1', '1');
+        try {
+          localStorage.setItem('shalom_cleaned_demo_contacts_v1', '1');
+        } catch {
+          // ignore
+        }
         resolve();
       };
       tx.onerror = () => resolve();

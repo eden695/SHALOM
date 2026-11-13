@@ -39,9 +39,25 @@ export function usePWAInstall() {
     // Register service worker in production, unregister stale workers in development
     if ('serviceWorker' in navigator) {
       if (import.meta.env.PROD) {
-        navigator.serviceWorker.register('./sw.js').catch((err) => {
-          console.warn('SW register error:', err);
-        });
+        const expectedSwUrl = new URL('./sw.js', window.location.href).href;
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((regs) => {
+            regs.forEach((reg) => {
+              const scriptUrl = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL;
+              if (scriptUrl && scriptUrl !== expectedSwUrl) {
+                reg.unregister().catch(() => {});
+              }
+            });
+          })
+          .catch(() => {});
+
+        navigator.serviceWorker
+          .register('./sw.js', { updateViaCache: 'none' })
+          .then((reg) => reg.update().catch(() => {}))
+          .catch((err) => {
+            console.warn('SW register error:', err);
+          });
       } else {
         navigator.serviceWorker.getRegistrations().then((regs) => {
           regs.forEach((reg) => reg.unregister());

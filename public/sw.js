@@ -1,5 +1,5 @@
-// Service Worker for SHALOM - Offline Christian Companion (Network-First)
-const CACHE_NAME = 'shalom-cache-v5';
+// Service Worker for SHALOM - Offline Christian Companion (Network-First, safe cache)
+const CACHE_NAME = 'shalom-cache-v6';
 const ASSETS_TO_CACHE = [
   './shalom_logo.jpg',
   './shalom_logo_512x512.png',
@@ -50,6 +50,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Always let navigation / HTML fetch live from network first, only fallback to cache when offline
+  if (event.request.mode === 'navigate' || url.pathname.endsWith('.html')) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' }).catch(async () => {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        const fallback = await caches.match('./index.html');
+        return fallback || Response.error();
+      })
+    );
+    return;
+  }
+
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
@@ -61,12 +74,7 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(async () => {
         const cached = await caches.match(event.request);
-        if (cached) return cached;
-        if (event.request.mode === 'navigate') {
-          const fallback = await caches.match('./index.html');
-          if (fallback) return fallback;
-        }
-        return Response.error();
+        return cached || Response.error();
       })
   );
 });

@@ -7,11 +7,23 @@ const SECURITY_SALT = 'SHALOM_SECURITY_SALT_JEAN_14_27_V2';
 const SECURITY_STORAGE_KEY = 'shalom_security_config_v2';
 
 export async function hashSecret(secret: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(secret + SECURITY_SALT);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  const salted = secret + SECURITY_SALT;
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(salted);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+  // Fallback deterministic hash for non-HTTPS contexts where crypto.subtle is unavailable
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9e3779b9;
+  for (let i = 0; i < salted.length; i++) {
+    const c = salted.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ c, 0x85ebca6b) >>> 0;
+  }
+  return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
 }
 
 export async function verifySecret(entered: string, storedHash: string): Promise<boolean> {
@@ -44,7 +56,11 @@ export function getSecurityConfig(): SecurityConfig {
 }
 
 export function saveSecurityConfig(config: SecurityConfig): void {
-  localStorage.setItem(SECURITY_STORAGE_KEY, JSON.stringify(config));
+  try {
+    localStorage.setItem(SECURITY_STORAGE_KEY, JSON.stringify(config));
+  } catch {
+    // ignore restricted storage
+  }
 }
 
 // --- In-memory Session Unlock Tracking ---
