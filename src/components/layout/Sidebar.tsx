@@ -13,6 +13,7 @@ import { LockableFeatureId } from '../../types';
 
 interface SidebarProps {
   userName?: string;
+  userAvatarUrl?: string;
   activeTab: string;
   onSelectTab: (tab: string) => void;
   lockedFeatures: LockableFeatureId[];
@@ -37,10 +38,13 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const Sidebar: React.FC<SidebarProps> = ({
   userName,
+  userAvatarUrl,
   activeTab,
   onSelectTab,
   lockedFeatures,
 }) => {
+  const displayName = userName?.trim() || 'Utilisateur';
+
   return (
     <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:shrink-0 bg-white dark:bg-[#091229] border-r border-slate-200/80 dark:border-slate-800/80 h-screen sticky top-0 select-none">
       {/* Brand Block */}
@@ -61,16 +65,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="text-lg font-extrabold tracking-tight text-[#0b1f42] dark:text-white font-display block leading-none">
               SHALOM
             </span>
-            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block truncate mt-1">
-              {userName || 'Mon Espace Personnel'}
+            <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 block truncate mt-1">
+              Compagnon Spirituel
             </span>
           </div>
         </div>
 
-        <div className="mt-3 text-[11px] font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-          <span>Compagnon Spirituel</span>
-          <span aria-hidden="true">·</span>
-          <span className="text-slate-400 font-normal">Jean 14:27</span>
+        <div className="mt-3.5 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-full overflow-hidden bg-[#0b1f42] text-white flex items-center justify-center text-xs font-bold shrink-0 border border-amber-400/50">
+            {userAvatarUrl ? (
+              <img src={userAvatarUrl} alt={displayName} className="w-full h-full object-cover" />
+            ) : (
+              <span>{displayName.charAt(0).toUpperCase()}</span>
+            )}
+          </div>
+          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+            {displayName}
+          </span>
         </div>
       </div>
 

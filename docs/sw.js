@@ -1,9 +1,9 @@
 // Service Worker for SHALOM - Offline Christian Companion (Network-First)
-const CACHE_NAME = 'shalom-cache-v4';
+const CACHE_NAME = 'shalom-cache-v5';
 const ASSETS_TO_CACHE = [
   './shalom_logo.jpg',
-  './shalom_logo_520x520.png',
-  './shalom_logo_520x520.jpg',
+  './shalom_logo_512x512.png',
+  './shalom_logo_512x512.jpg',
   './icon.png',
   './manifest.json',
 ];
@@ -41,7 +41,6 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (!url.protocol.startsWith('http') || url.origin !== self.location.origin) return;
 
-  // Never intercept Vite dev/HMR endpoints
   if (
     url.pathname.includes('/@vite') ||
     url.pathname.includes('/@react-refresh') ||
@@ -51,7 +50,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-First for HTML navigations & app bundles so updates apply cleanly
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {

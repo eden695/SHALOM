@@ -17,8 +17,12 @@ import {
   CheckSquare,
   Square,
   Send,
+  Smartphone,
+  Upload,
+  ExternalLink,
 } from 'lucide-react';
 import { dbService, STORES } from '../../services/db';
+import { pickContactsFromDevice, importContactsFromVcfOrCsv } from '../../services/phoneContacts';
 import { useShalomDB } from '../../hooks/useShalomDB';
 import { PrayerItem, TestimonyItem, PrayerCategory, PrayerStatus, Contact } from '../../types';
 import { Modal } from '../common/Modal';
@@ -74,7 +78,8 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
   onShareWithContacts,
   onOpenWhatsAppShare,
 }) => {
-  const { prayers, testimonies, contacts, reloadData } = useShalomDB();
+  const { userProfile, prayers, testimonies, contacts, reloadData } = useShalomDB();
+  const currentUserName = userProfile?.fullName?.trim() || 'Utilisateur';
   const [activeTab, setActiveTab] = useState<'requests' | 'testimonies'>('requests');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -108,6 +113,7 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
   // Directory Contact Picker Modal when selecting "Partageable"
   const [isDirectoryPickerOpen, setIsDirectoryPickerOpen] = useState(false);
   const [directorySearch, setDirectorySearch] = useState('');
+  const [directoryNotice, setDirectoryNotice] = useState<string | null>(null);
 
   // Testimony Modal + Media attachment
   const [isTestimonyModalOpen, setIsTestimonyModalOpen] = useState(false);
@@ -137,6 +143,12 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
   // Delete confirmation
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteType, setDeleteType] = useState<'prayer' | 'testimony'>('prayer');
+
+  // Share testimony fallback (when device browser does not support navigator.share with media files)
+  const [shareFallback, setShareFallback] = useState<{
+    text: string;
+    message: string;
+  } | null>(null);
 
   const CATEGORIES: { id: PrayerCategory; label: string }[] = [
     { id: 'personnelle', label: 'Prière Personnelle' },
@@ -222,6 +234,39 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
     });
   };
 
+  const handlePickPhoneContactsForPrayer = async () => {
+    const res = await pickContactsFromDevice(contacts);
+    if (res.message) setDirectoryNotice(res.message);
+    if (res.status === 'success' && res.contacts.length > 0) {
+      const pickedIds = res.contacts.map((c) => c.id);
+      setPrayerForm((prev) => ({
+        ...prev,
+        authorizedContactIds: Array.from(new Set([...prev.authorizedContactIds, ...pickedIds])),
+      }));
+      reloadData();
+    }
+  };
+
+  const handleImportVcfForPrayer = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const { contacts: imported, addedCount } = await importContactsFromVcfOrCsv(file, contacts);
+    if (imported.length > 0) {
+      const importedIds = imported.map((c) => c.id);
+      setPrayerForm((prev) => ({
+        ...prev,
+        authorizedContactIds: Array.from(new Set([...prev.authorizedContactIds, ...importedIds])),
+      }));
+      setDirectoryNotice(
+        `${imported.length} contact(s) sélectionné(s) (${addedCount} nouveau(x) importé(s)).`
+      );
+      reloadData();
+    } else {
+      setDirectoryNotice('Aucun contact valide trouvé dans ce fichier.');
+    }
+    e.target.value = '';
+  };
+
   const handleSavePrayer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prayerForm.title.trim()) return;
@@ -264,7 +309,7 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
         bibleVerse: itemToSave.bibleVerse,
         category: itemToSave.category,
         prayerId: itemToSave.id,
-        authorName: 'Témoignage SHALOM',
+        authorName: currentUserName,
         createdAt: now,
       };
       await dbService.put(STORES.TESTIMONIES, autoTestimony);
@@ -347,7 +392,7 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
       date: new Date().toISOString().split('T')[0],
       bibleVerse: testimonyForm.bibleVerse.trim() || undefined,
       category: testimonyForm.category,
-      authorName: testimonyForm.authorName.trim() || 'Fidèle SHALOM',
+      authorName: testimonyForm.authorName.trim() || currentUserName,
       mediaBlobKey,
       mediaType,
       mediaMimeType,
@@ -361,7 +406,7 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
       content: '',
       bibleVerse: '',
       category: 'reconnaissance',
-      authorName: '',
+      authorName: currentUserName,
     });
     setIsTestimonyModalOpen(false);
     reloadData();
@@ -382,17 +427,87 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
     reloadData();
   };
 
-  const handleShareTestimony = (t: TestimonyItem) => {
-    const text = `🙌 *TÉMOIGNAGE DE FOI - SHALOM*\n\n*${t.title}*\n${t.content}\n\n${
+  const handleShareTestimony = async (t: TestimonyItem) => {
+    const authorDisplay =
+      t.authorName && t.authorName !== 'Fidèle SHALOM' && t.authorName !== 'Témoignage SHALOM'
+        ? t.authorName
+        : currentUserName;
+
+    const text = `🙌 *TÉMOIGNAGE DE FOI - ${authorDisplay}*\n\n*${t.title}*\n${t.content}\n\n${
       t.bibleVerse ? `📖 ${t.bibleVerse}\n\n` : ''
     }« Rendez grâces au Seigneur, car il est bon ! »`;
+
+    if (t.mediaBlobKey) {
+      try {
+        const blob = await dbService.getMediaBlob(t.mediaBlobKey);
+        if (blob && blob.size > 0) {
+          const mime =
+            t.mediaMimeType || blob.type || (t.mediaType === 'video' ? 'video/mp4' : 'image/jpeg');
+          const ext = mime.includes('png')
+            ? 'png'
+            : mime.includes('webp')
+            ? 'webp'
+            : mime.includes('webm')
+            ? 'webm'
+            : mime.includes('mp4')
+            ? 'mp4'
+            : t.mediaType === 'video'
+            ? 'mp4'
+            : 'jpg';
+          const fileName = `temoignage_shalom.${ext}`;
+          const file = new File([blob], fileName, { type: mime });
+
+          const nav = navigator as Navigator & {
+            canShare?: (data: ShareData) => boolean;
+          };
+
+          if (nav.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
+            try {
+              await nav.share({
+                title: t.title,
+                text,
+                files: [file],
+              });
+              return;
+            } catch (err: unknown) {
+              if (err instanceof Error && err.name === 'AbortError') {
+                return;
+              }
+            }
+          }
+
+          // Fallback when browser does not support Web Share with media files:
+          // Auto-download the photo/video file + copy text + provide direct WhatsApp button
+          const dlUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = dlUrl;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(dlUrl), 1000);
+
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).catch(() => {});
+          }
+
+          setShareFallback({
+            text,
+            message: `Le fichier média (${fileName}) a été téléchargé et le texte copié. Cliquez sur « Ouvrir WhatsApp » puis joignez le fichier téléchargé.`,
+          });
+          return;
+        }
+      } catch {
+        // Fallback to text sharing if blob unavailable
+      }
+    }
+
     if (onOpenWhatsAppShare) {
       onOpenWhatsAppShare(text);
     } else if (navigator.share) {
       navigator.share({ title: t.title, text }).catch(() => {});
-    } else {
+    } else if (navigator.clipboard) {
       navigator.clipboard.writeText(text);
-      alert('Témoignage copié dans le presse-papier !');
     }
   };
 
@@ -627,18 +742,14 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
             })}
 
             {filteredPrayers.length === 0 && (
-              <div className="col-span-full py-12 text-center rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200 dark:border-slate-800">
+              <div className="col-span-full py-12 text-center rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200 dark:border-slate-800 space-y-1">
                 <HeartHandshake className="w-10 h-10 text-slate-400 mx-auto mb-2" />
                 <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                   Aucune requête trouvée.
                 </p>
-                <button
-                  type="button"
-                  onClick={handleOpenAddPrayer}
-                  className="mt-3 px-4 py-2 rounded-xl bg-blue-700 text-white text-xs font-bold"
-                >
-                  Ajouter une requête de prière
-                </button>
+                <p className="text-xs text-slate-500">
+                  Cliquez sur « Nouvelle Prière » ci-dessus pour en créer une.
+                </p>
               </div>
             )}
           </div>
@@ -654,7 +765,13 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
             </p>
             <button
               type="button"
-              onClick={() => setIsTestimonyModalOpen(true)}
+              onClick={() => {
+                setTestimonyForm((prev) => ({
+                  ...prev,
+                  authorName: prev.authorName || currentUserName,
+                }));
+                setIsTestimonyModalOpen(true);
+              }}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 self-start sm:self-auto"
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -698,7 +815,12 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
                   )}
 
                   <p className="text-[11px] text-slate-400">
-                    Par {testimony.authorName || 'Fidèle SHALOM'}
+                    Par{' '}
+                    {testimony.authorName &&
+                    testimony.authorName !== 'Fidèle SHALOM' &&
+                    testimony.authorName !== 'Témoignage SHALOM'
+                      ? testimony.authorName
+                      : currentUserName}
                   </p>
                 </div>
 
@@ -709,7 +831,7 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
                     className="text-emerald-700 dark:text-emerald-400 font-semibold text-xs flex items-center gap-1.5 hover:underline"
                   >
                     <Share2 className="w-3.5 h-3.5" />
-                    <span>Partager</span>
+                    <span>{testimony.mediaBlobKey ? 'Partager (avec média)' : 'Partager'}</span>
                   </button>
 
                   <button
@@ -727,18 +849,14 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
             ))}
 
             {testimonies.length === 0 && (
-              <div className="col-span-full py-12 text-center rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200 dark:border-slate-800">
+              <div className="col-span-full py-12 text-center rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200 dark:border-slate-800 space-y-1">
                 <Sparkles className="w-10 h-10 text-amber-500 mx-auto mb-2" />
                 <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                   Aucun témoignage enregistré pour le moment.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setIsTestimonyModalOpen(true)}
-                  className="mt-3 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold"
-                >
-                  Publier le premier témoignage
-                </button>
+                <p className="text-xs text-slate-500">
+                  Cliquez sur « Publier un Témoignage » ci-dessus pour célébrer une grâce de Dieu.
+                </p>
               </div>
             )}
           </div>
@@ -913,12 +1031,43 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
       {/* Modal: Directory Contact Picker for Shareable Prayer */}
       <Modal
         isOpen={isDirectoryPickerOpen}
-        onClose={() => setIsDirectoryPickerOpen(false)}
+        onClose={() => {
+          setIsDirectoryPickerOpen(false);
+          setDirectoryNotice(null);
+        }}
         title="Sélectionner les personnes autorisées"
-        subtitle="Choisissez dans votre répertoire à qui partager ce sujet de prière"
+        subtitle="Ouvrez le répertoire de votre téléphone ou cochez vos contacts SHALOM"
         maxWidth="md"
       >
         <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handlePickPhoneContactsForPrayer}
+              className="px-3 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold flex items-center justify-center gap-1.5"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Répertoire du téléphone</span>
+            </button>
+
+            <label className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer">
+              <Upload className="w-3.5 h-3.5 text-blue-600" />
+              <span>Importer .vcf</span>
+              <input
+                type="file"
+                accept=".vcf,.csv"
+                onChange={handleImportVcfForPrayer}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          {directoryNotice && (
+            <p className="text-[11px] p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-200">
+              {directoryNotice}
+            </p>
+          )}
+
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -1158,6 +1307,47 @@ export const PrayerModule: React.FC<PrayerModuleProps> = ({
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeletingId(null)}
       />
+
+      {/* Fallback Modal when device doesn't support Web Share API with files */}
+      <Modal
+        isOpen={!!shareFallback}
+        onClose={() => setShareFallback(null)}
+        title="Partager sur WhatsApp avec le média"
+        maxWidth="sm"
+      >
+        {shareFallback && (
+          <div className="space-y-4 text-xs">
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+              {shareFallback.message}
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShareFallback(null)}
+                className="px-3.5 py-2 rounded-xl text-slate-600 dark:text-slate-300 font-semibold"
+              >
+                Fermer
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const txt = shareFallback.text;
+                  setShareFallback(null);
+                  if (onOpenWhatsAppShare) {
+                    onOpenWhatsAppShare(txt);
+                  } else {
+                    window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Ouvrir WhatsApp</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

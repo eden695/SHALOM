@@ -18,6 +18,7 @@ import {
   Info,
 } from 'lucide-react';
 import { dbService, STORES } from '../../services/db';
+import { pickContactsFromDevice, importContactsFromVcfOrCsv } from '../../services/phoneContacts';
 import { useShalomDB } from '../../hooks/useShalomDB';
 import { Contact, ContactCategory } from '../../types';
 import { Modal } from '../common/Modal';
@@ -181,110 +182,26 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
     setStatusMessage(`${contacts.length} contact(s) exporté(s) au format CSV.`);
   };
 
-  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      const text = evt.target?.result as string;
-      if (!text) return;
-
-      let imported = 0;
-
-      if (file.name.toLowerCase().endsWith('.vcf') || text.includes('BEGIN:VCARD')) {
-        const cards = text.split(/BEGIN:VCARD/i).slice(1);
-        for (let i = 0; i < cards.length; i++) {
-          const card = cards[i];
-          const fnMatch = card.match(/FN(?:;[^:]*)?:(.+)/i);
-          const telMatch = card.match(/TEL(?:;[^:]*)?:(.+)/i);
-          const emailMatch = card.match(/EMAIL(?:;[^:]*)?:(.+)/i);
-
-          const fullName = fnMatch?.[1]?.trim() || '';
-          const phone = telMatch?.[1]?.trim() || '';
-          if (fullName && phone) {
-            const nameParts = fullName.split(' ');
-            const newContact: Contact = {
-              id: `c_vcf_${Date.now()}_${i}`,
-              firstName: nameParts[0] || fullName,
-              lastName: nameParts.slice(1).join(' '),
-              phone,
-              email: emailMatch?.[1]?.trim() || undefined,
-              category: 'personnel',
-              createdAt: new Date().toISOString(),
-            };
-            await dbService.put(STORES.CONTACTS, newContact);
-            imported++;
-          }
-        }
-      } else {
-        const lines = text.split('\n').filter((l) => l.trim().length > 0);
-        for (let i = 1; i < lines.length; i++) {
-          const parts = lines[i].split(',').map((s) => s.replace(/(^"|"$)/g, '').trim());
-          if (parts.length >= 3 && parts[0] && parts[2]) {
-            const newContact: Contact = {
-              id: `c_imp_${Date.now()}_${i}`,
-              firstName: parts[0],
-              lastName: parts[1] || '',
-              phone: parts[2],
-              email: parts[3] || undefined,
-              category: (parts[4] as ContactCategory) || 'personnel',
-              neighborhood: parts[5] || undefined,
-              address: parts[6] || undefined,
-              notes: parts[7] || undefined,
-              createdAt: new Date().toISOString(),
-            };
-            await dbService.put(STORES.CONTACTS, newContact);
-            imported++;
-          }
-        }
-      }
-
-      setStatusMessage(`${imported} contact(s) importé(s) dans votre répertoire local.`);
+    const { contacts: importedContacts, addedCount } = await importContactsFromVcfOrCsv(file, contacts);
+    if (importedContacts.length > 0) {
+      setStatusMessage(
+        `${addedCount} nouveau(x) contact(s) importé(s) (${importedContacts.length} traité(s)).`
+      );
       reloadData();
-    };
-    reader.readAsText(file);
+    } else {
+      setStatusMessage('Aucun contact valide trouvé dans ce fichier.');
+    }
     e.target.value = '';
   };
 
   const handlePickFromPhone = async () => {
-    const nav = navigator as unknown as {
-      contacts?: {
-        select: (props: string[], opts: { multiple: boolean }) => Promise<Array<{ name?: string[]; tel?: string[]; email?: string[] }>>;
-      };
-    };
-
-    if (!nav.contacts || typeof nav.contacts.select !== 'function') {
-      setStatusMessage(
-        'Le sélecteur natif du téléphone n’est pas disponible sur ce navigateur. Utilisez « Importer CSV / vCard (.vcf) » pour importer les contacts exportés de votre téléphone.'
-      );
-      return;
-    }
-
-    try {
-      const picked = await nav.contacts.select(['name', 'tel', 'email'], { multiple: true });
-      let added = 0;
-      for (let i = 0; i < picked.length; i++) {
-        const p = picked[i];
-        const rawName = p.name?.[0] || 'Contact';
-        const phone = p.tel?.[0] || '';
-        if (!phone) continue;
-        const parts = rawName.trim().split(' ');
-        await dbService.put(STORES.CONTACTS, {
-          id: `c_tel_${Date.now()}_${i}`,
-          firstName: parts[0] || rawName,
-          lastName: parts.slice(1).join(' '),
-          phone,
-          email: p.email?.[0] || undefined,
-          category: 'personnel',
-          createdAt: new Date().toISOString(),
-        });
-        added++;
-      }
-      setStatusMessage(`${added} contact(s) importé(s) depuis le répertoire du téléphone.`);
+    const res = await pickContactsFromDevice(contacts);
+    if (res.message) setStatusMessage(res.message);
+    if (res.status === 'success' && res.addedCount > 0) {
       reloadData();
-    } catch {
-      setStatusMessage('Importation depuis le répertoire annulée.');
     }
   };
 
@@ -521,18 +438,16 @@ export const ContactsModule: React.FC<ContactsModuleProps> = ({ onStartCampaignW
         })}
 
         {filteredContacts.length === 0 && (
-          <div className="col-span-full py-12 text-center rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200 dark:border-slate-800">
-            <Users className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+          <div className="col-span-full py-12 px-4 text-center rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200 dark:border-slate-800 space-y-2">
+            <Users className="w-10 h-10 text-slate-400 mx-auto" />
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Aucun contact trouvé.
+              {contacts.length === 0
+                ? 'Votre répertoire est vide pour le moment.'
+                : 'Aucun contact ne correspond à votre recherche.'}
             </p>
-            <button
-              type="button"
-              onClick={handleOpenAdd}
-              className="mt-3 px-4 py-2 rounded-xl bg-blue-700 text-white text-xs font-bold"
-            >
-              Ajouter un contact
-            </button>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Utilisez les boutons ci-dessus pour ouvrir le répertoire de votre téléphone, importer un fichier .vcf/.csv ou ajouter un contact manuellement.
+            </p>
           </div>
         )}
       </div>

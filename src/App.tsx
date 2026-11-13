@@ -125,6 +125,7 @@ export default function App() {
     <div className="min-h-screen flex bg-[#f7f8fa] dark:bg-[#060d1d] text-slate-900 dark:text-slate-100 transition-colors">
       <Sidebar
         userName={userProfile?.fullName}
+        userAvatarUrl={userProfile?.avatarDataUrl}
         activeTab={activeTab}
         onSelectTab={handleSelectTab}
         lockedFeatures={securityConfig.isEnabled ? securityConfig.lockedFeatures : []}
@@ -133,6 +134,7 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0">
         <Header
           pageTitle={pageTitle}
+          showBackButton={activeTab !== 'dashboard'}
           isDarkMode={isDarkMode}
           onToggleDarkMode={toggleDarkMode}
           isSecurityEnabled={securityConfig.isEnabled}

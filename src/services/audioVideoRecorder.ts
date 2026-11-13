@@ -1,5 +1,6 @@
 // Audio & Video MediaRecorder Service for SHALOM
-// Reliable capture with live audio level metering and native codec fallback
+// Reliable capture with live audio level metering, native codec fallback,
+// and seamless live front/back camera switching during video recording
 
 export interface RecorderState {
   isRecording: boolean;
@@ -7,6 +8,7 @@ export interface RecorderState {
   durationSeconds: number;
   audioLevel: number; // 0 to 100
   mode: 'audio' | 'video';
+  facingMode: 'user' | 'environment';
   error: string | null;
 }
 
@@ -14,6 +16,12 @@ export class MediaRecordingManager {
   private mediaRecorder: MediaRecorder | null = null;
   private recordedChunks: Blob[] = [];
   private mediaStream: MediaStream | null = null;
+  private videoSourceStream: MediaStream | null = null;
+  private audioSourceStream: MediaStream | null = null;
+  private previewVideoElement: HTMLVideoElement | null = null;
+  private hiddenSourceVideo: HTMLVideoElement | null = null;
+  private compositeCanvas: HTMLCanvasElement | null = null;
+  private compositeAnimFrame: number | null = null;
   private timerInterval: number | null = null;
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
@@ -26,6 +34,7 @@ export class MediaRecordingManager {
     durationSeconds: 0,
     audioLevel: 0,
     mode: 'audio',
+    facingMode: 'user',
     error: null,
   };
 
@@ -85,7 +94,9 @@ export class MediaRecordingManager {
 
   private startAudioLevelMeter(stream: MediaStream) {
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
 
       const ctx = new AudioCtx();
@@ -148,6 +159,7 @@ export class MediaRecordingManager {
       durationSeconds: 0,
       audioLevel: 0,
       mode: 'audio',
+      facingMode: 'user',
       error: null,
     };
 
@@ -173,6 +185,7 @@ export class MediaRecordingManager {
       });
 
       this.mediaStream = stream;
+      this.audioSourceStream = stream;
       this.recordedChunks = [];
       this.mediaRecorder = this.createRecorder(stream, 'audio');
 
@@ -204,6 +217,73 @@ export class MediaRecordingManager {
     }
   }
 
+  public async acquireVideoCameraStream(facingMode: 'user' | 'environment'): Promise<MediaStream> {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { exact: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+    } catch {
+      return await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+    }
+  }
+
+  public static async capturePhotoFromVideoElement(
+    videoEl: HTMLVideoElement | null
+  ): Promise<Blob | null> {
+    if (!videoEl || videoEl.readyState < 2 || videoEl.videoWidth === 0 || videoEl.videoHeight === 0) {
+      return null;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = videoEl.videoWidth;
+    canvas.height = videoEl.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92);
+    });
+  }
+
+  public async capturePhotoFromActiveVideo(): Promise<Blob | null> {
+    const targetVideo =
+      this.hiddenSourceVideo && this.hiddenSourceVideo.videoWidth > 0
+        ? this.hiddenSourceVideo
+        : this.previewVideoElement;
+    return MediaRecordingManager.capturePhotoFromVideoElement(targetVideo);
+  }
+
+  private startCanvasCompositor() {
+    if (!this.compositeCanvas || !this.hiddenSourceVideo) return;
+    const canvas = this.compositeCanvas;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const drawLoop = () => {
+      if (!this.state.isRecording && !this.compositeCanvas) return;
+      const vid = this.hiddenSourceVideo;
+      if (vid && vid.readyState >= 2 && vid.videoWidth > 0 && vid.videoHeight > 0) {
+        if (canvas.width !== vid.videoWidth || canvas.height !== vid.videoHeight) {
+          canvas.width = vid.videoWidth;
+          canvas.height = vid.videoHeight;
+        }
+        ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+      }
+      this.compositeAnimFrame = requestAnimationFrame(drawLoop);
+    };
+
+    this.compositeAnimFrame = requestAnimationFrame(drawLoop);
+  }
+
   public async startVideoRecording(
     videoElement?: HTMLVideoElement | null,
     facingMode: 'user' | 'environment' = 'user'
@@ -215,6 +295,7 @@ export class MediaRecordingManager {
       durationSeconds: 0,
       audioLevel: 0,
       mode: 'video',
+      facingMode,
       error: null,
     };
 
@@ -223,33 +304,62 @@ export class MediaRecordingManager {
         throw new Error("L'accès à la caméra n'est pas disponible sur cet appareil.");
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
+      this.previewVideoElement = videoElement || null;
+
+      // Keep audio stream separate so switching cameras never interrupts the mic
+      const audioStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
         },
-        video: {
-          facingMode: { ideal: facingMode },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
       });
-
-      stream.getAudioTracks().forEach((t) => {
+      audioStream.getAudioTracks().forEach((t) => {
         t.enabled = true;
       });
+      this.audioSourceStream = audioStream;
 
-      this.mediaStream = stream;
-      this.recordedChunks = [];
+      const videoStream = await this.acquireVideoCameraStream(facingMode);
+      this.videoSourceStream = videoStream;
 
-      if (videoElement) {
-        videoElement.srcObject = stream;
-        videoElement.muted = true;
-        await videoElement.play().catch(() => {});
+      // Setup preview
+      if (this.previewVideoElement) {
+        this.previewVideoElement.srcObject = videoStream;
+        this.previewVideoElement.muted = true;
+        await this.previewVideoElement.play().catch(() => {});
       }
 
-      this.mediaRecorder = this.createRecorder(stream, 'video');
+      // Setup offscreen canvas pipeline so camera tracks can swap live seamlessly
+      const canvas = document.createElement('canvas');
+      canvas.width = 1280;
+      canvas.height = 720;
+      this.compositeCanvas = canvas;
+
+      const srcVideo = document.createElement('video');
+      srcVideo.muted = true;
+      srcVideo.playsInline = true;
+      srcVideo.autoplay = true;
+      srcVideo.srcObject = videoStream;
+      await srcVideo.play().catch(() => {});
+      this.hiddenSourceVideo = srcVideo;
+
+      let recordingStream: MediaStream;
+      if (typeof canvas.captureStream === 'function') {
+        const canvasStream = canvas.captureStream(30);
+        recordingStream = new MediaStream([
+          ...canvasStream.getVideoTracks(),
+          ...audioStream.getAudioTracks(),
+        ]);
+      } else {
+        recordingStream = new MediaStream([
+          ...videoStream.getVideoTracks(),
+          ...audioStream.getAudioTracks(),
+        ]);
+      }
+
+      this.mediaStream = recordingStream;
+      this.recordedChunks = [];
+      this.mediaRecorder = this.createRecorder(recordingStream, 'video');
 
       this.mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
@@ -263,14 +373,82 @@ export class MediaRecordingManager {
       this.state.isRecording = true;
       this.state.isPaused = false;
       this.notify();
-      this.startAudioLevelMeter(stream);
 
-      return stream;
+      this.startCanvasCompositor();
+      this.startAudioLevelMeter(audioStream);
+
+      return videoStream;
     } catch (err: unknown) {
+      this.cleanup();
       const msg = err instanceof Error ? err.message : "Erreur d'accès à la caméra";
       this.state.error = msg;
       this.notify();
       throw err;
+    }
+  }
+
+  public async switchCamera(): Promise<'user' | 'environment'> {
+    if (this.state.mode !== 'video' || !this.state.isRecording) {
+      const next = this.state.facingMode === 'user' ? 'environment' : 'user';
+      this.state.facingMode = next;
+      this.notify();
+      return next;
+    }
+
+    const nextFacing: 'user' | 'environment' =
+      this.state.facingMode === 'user' ? 'environment' : 'user';
+
+    // Stop previous camera hardware tracks first (mobile devices often allow only 1 camera open at once)
+    if (this.videoSourceStream) {
+      this.videoSourceStream.getVideoTracks().forEach((t) => t.stop());
+      this.videoSourceStream = null;
+    }
+
+    try {
+      const newVideoStream = await this.acquireVideoCameraStream(nextFacing);
+      this.videoSourceStream = newVideoStream;
+
+      if (this.hiddenSourceVideo) {
+        this.hiddenSourceVideo.srcObject = newVideoStream;
+        await this.hiddenSourceVideo.play().catch(() => {});
+      }
+
+      if (this.previewVideoElement) {
+        this.previewVideoElement.srcObject = newVideoStream;
+        this.previewVideoElement.muted = true;
+        await this.previewVideoElement.play().catch(() => {});
+      }
+
+      // If browser didn't support canvas.captureStream, update direct MediaStream tracks
+      if (this.mediaStream && (!this.compositeCanvas || typeof this.compositeCanvas.captureStream !== 'function')) {
+        this.mediaStream.getVideoTracks().forEach((t) => {
+          this.mediaStream?.removeTrack(t);
+          t.stop();
+        });
+        newVideoStream.getVideoTracks().forEach((t) => this.mediaStream?.addTrack(t));
+      }
+
+      this.state.facingMode = nextFacing;
+      this.state.error = null;
+      this.notify();
+      return nextFacing;
+    } catch {
+      // Restore previous facing mode if device only has one camera
+      try {
+        const fallbackStream = await this.acquireVideoCameraStream(this.state.facingMode);
+        this.videoSourceStream = fallbackStream;
+        if (this.hiddenSourceVideo) {
+          this.hiddenSourceVideo.srcObject = fallbackStream;
+          await this.hiddenSourceVideo.play().catch(() => {});
+        }
+        if (this.previewVideoElement) {
+          this.previewVideoElement.srcObject = fallbackStream;
+          await this.previewVideoElement.play().catch(() => {});
+        }
+      } catch {
+        // ignore
+      }
+      throw new Error("Impossible de basculer vers l'autre caméra sur cet appareil.");
     }
   }
 
@@ -354,6 +532,7 @@ export class MediaRecordingManager {
       durationSeconds: 0,
       audioLevel: 0,
       mode: 'audio',
+      facingMode: 'user',
       error: null,
     };
     this.notify();
@@ -380,14 +559,30 @@ export class MediaRecordingManager {
       cancelAnimationFrame(this.levelAnimFrame);
       this.levelAnimFrame = null;
     }
+    if (this.compositeAnimFrame) {
+      cancelAnimationFrame(this.compositeAnimFrame);
+      this.compositeAnimFrame = null;
+    }
     if (this.audioContext) {
       this.audioContext.close().catch(() => {});
       this.audioContext = null;
       this.analyser = null;
     }
-    if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach((track) => track.stop());
-      this.mediaStream = null;
+    if (this.hiddenSourceVideo) {
+      this.hiddenSourceVideo.srcObject = null;
+      this.hiddenSourceVideo = null;
     }
+    if (this.previewVideoElement) {
+      this.previewVideoElement.srcObject = null;
+      this.previewVideoElement = null;
+    }
+    this.compositeCanvas = null;
+
+    [this.videoSourceStream, this.audioSourceStream, this.mediaStream].forEach((s) => {
+      if (s) s.getTracks().forEach((track) => track.stop());
+    });
+    this.videoSourceStream = null;
+    this.audioSourceStream = null;
+    this.mediaStream = null;
   }
 }

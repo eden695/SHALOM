@@ -77,26 +77,49 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return items.sort((a, b) => a.date.localeCompare(b.date));
   }, [calendarActivities, prayers, todayIso]);
 
+  const hasCustomVerse = Boolean(userProfile?.dashboardVerseText?.trim());
+  const verseText = hasCustomVerse
+    ? userProfile!.dashboardVerseText!.trim()
+    : '« Je vous laisse la paix, je vous donne ma paix. Je ne vous donne pas comme le monde donne. Que votre cœur ne se trouble point, et ne s’alarme point. »';
+  const verseRef = hasCustomVerse
+    ? userProfile?.dashboardVerseRef?.trim() || ''
+    : 'Jean 14:27';
+  const displayName = userProfile?.fullName?.trim() || 'Utilisateur';
+
   return (
     <div className="space-y-6 pb-8 animate-in fade-in duration-200">
       {/* Personal Welcome Card */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0b1f42] via-[#102b5c] to-[#173c7a] text-white p-5 sm:p-8 shadow-lg border border-blue-900/50">
         <div className="relative z-10 max-w-2xl">
-          <div className="text-xs font-semibold text-amber-300 mb-1.5 capitalize">
-            {todayFormatted}
+          <div className="flex items-center gap-3.5 mb-2">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden border-2 border-amber-300/70 bg-white/15 flex items-center justify-center text-lg font-extrabold text-amber-200 shrink-0 shadow-md">
+              {userProfile?.avatarDataUrl ? (
+                <img
+                  src={userProfile.avatarDataUrl}
+                  alt={displayName}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span>{displayName.charAt(0).toUpperCase()}</span>
+              )}
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-amber-300 capitalize">
+                {todayFormatted}
+              </div>
+              <h2 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white font-display leading-tight">
+                Paix du Seigneur, {displayName}
+              </h2>
+            </div>
           </div>
 
-          <h2 className="text-xl sm:text-3xl font-extrabold tracking-tight text-white mb-2 font-display">
-            Paix du Seigneur, {userProfile?.fullName || 'Bien-aimé(e)'}
-          </h2>
-
           <div className="mt-3 p-3.5 rounded-2xl bg-white/10 backdrop-blur-xs border border-white/15 text-slate-100 text-xs sm:text-sm leading-relaxed">
-            <p className="italic font-serif">
-              « Je vous laisse la paix, je vous donne ma paix. Je ne vous donne pas comme le monde donne. Que votre cœur ne se trouble point, et ne s’alarme point. »
-            </p>
-            <p className="text-right text-[11px] font-semibold text-amber-300 mt-1">
-              — Jean 14:27
-            </p>
+            <p className="italic font-serif whitespace-pre-line">{verseText}</p>
+            {verseRef && (
+              <p className="text-right text-[11px] font-semibold text-amber-300 mt-1">
+                — {verseRef}
+              </p>
+            )}
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">

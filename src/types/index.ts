@@ -111,6 +111,7 @@ export interface RecordedParole {
   mediaType: 'audio' | 'video';
   mimeType: string;
   blobKey?: string;
+  photoBlobKeys?: string[];
   fileSizeFormatted?: string;
   createdAt: string;
 }
@@ -187,6 +188,9 @@ export interface UserProfile {
   fullName: string;
   phone?: string;
   email?: string;
+  avatarDataUrl?: string;
+  dashboardVerseText?: string;
+  dashboardVerseRef?: string;
   theme: 'light' | 'dark';
   createdAt: string;
 }

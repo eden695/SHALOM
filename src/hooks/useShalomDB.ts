@@ -25,7 +25,7 @@ export function useShalomDB() {
   const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]);
   const [shareHistory, setShareHistory] = useState<ShareHistoryItem[]>([]);
 
-  const reloadData = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [
         profiles,
@@ -65,9 +65,19 @@ export function useShalomDB() {
     }
   }, []);
 
+  const reloadData = useCallback(async () => {
+    await fetchData();
+    window.dispatchEvent(new Event('shalom-db-updated'));
+  }, [fetchData]);
+
   useEffect(() => {
-    reloadData();
-  }, [reloadData]);
+    fetchData();
+    const handleSync = () => {
+      fetchData();
+    };
+    window.addEventListener('shalom-db-updated', handleSync);
+    return () => window.removeEventListener('shalom-db-updated', handleSync);
+  }, [fetchData]);
 
   return {
     loading,

@@ -13,6 +13,7 @@ import { dbService, STORES } from '../../services/db';
 import { useShalomDB } from '../../hooks/useShalomDB';
 import { CalendarActivity, CalendarActivityType } from '../../types';
 import { Modal } from '../common/Modal';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 
 export const PERSONAL_ACTIVITY_TYPES: Array<{ id: CalendarActivityType; label: string; color: string }> = [
   { id: 'priere', label: 'Temps de prière', color: '#1d4ed8' },
@@ -46,6 +47,7 @@ export const UnifiedCalendarModule: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [form, setForm] = useState<{
     title: string;
     activityType: CalendarActivityType;
@@ -143,8 +145,10 @@ export const UnifiedCalendarModule: React.FC = () => {
     reloadData();
   };
 
-  const handleDeleteCalendarItem = async (id: string) => {
-    await dbService.deleteItem(STORES.CALENDAR_ACTIVITIES, id);
+  const handleConfirmDeleteCalendarItem = async () => {
+    if (!deletingId) return;
+    await dbService.deleteItem(STORES.CALENDAR_ACTIVITIES, deletingId);
+    setDeletingId(null);
     reloadData();
   };
 
@@ -328,7 +332,8 @@ export const UnifiedCalendarModule: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDeleteCalendarItem(item.raw!.id)}
+                      onClick={() => setDeletingId(item.raw!.id)}
+                      aria-label="Supprimer ce moment"
                       className="p-1.5 rounded-lg text-slate-400 hover:text-red-500"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -449,6 +454,17 @@ export const UnifiedCalendarModule: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={!!deletingId}
+        title="Supprimer ce moment du calendrier ?"
+        message="Cette action supprimera définitivement ce rendez-vous de votre calendrier."
+        confirmLabel="Oui, supprimer"
+        cancelLabel="Annuler"
+        isDestructive
+        onConfirm={handleConfirmDeleteCalendarItem}
+        onCancel={() => setDeletingId(null)}
+      />
     </div>
   );
 };

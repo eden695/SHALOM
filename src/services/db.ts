@@ -55,6 +55,7 @@ class ShalomDB {
         };
         try {
           await this.seedInitialDataIfEmpty(db);
+          await this.removeLegacyDemoContacts(db);
         } catch (err) {
           console.warn('Seed warning:', err);
         }
@@ -231,6 +232,30 @@ class ShalomDB {
     }
   }
 
+  private async removeLegacyDemoContacts(db: IDBDatabase): Promise<void> {
+    if (localStorage.getItem('shalom_cleaned_demo_contacts_v1')) return;
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORES.CONTACTS, 'readwrite');
+      const store = tx.objectStore(STORES.CONTACTS);
+      const checkAndDelete = (id: string, expectedPhone: string) => {
+        const req = store.get(id);
+        req.onsuccess = () => {
+          const item = req.result as Contact | undefined;
+          if (item && item.phone === expectedPhone) {
+            store.delete(id);
+          }
+        };
+      };
+      checkAndDelete('c_1', '+33612345678');
+      checkAndDelete('c_2', '+33687654321');
+      tx.oncomplete = () => {
+        localStorage.setItem('shalom_cleaned_demo_contacts_v1', '1');
+        resolve();
+      };
+      tx.onerror = () => resolve();
+    });
+  }
+
   private async seedInitialDataIfEmpty(db: IDBDatabase): Promise<void> {
     const checkCount = (storeName: string): Promise<number> => {
       return new Promise((resolve) => {
@@ -254,7 +279,7 @@ class ShalomDB {
     if ((await checkCount(STORES.PROFILES)) === 0) {
       const defaultUser: UserProfile = {
         id: 'user_main',
-        fullName: 'Mon Espace SHALOM',
+        fullName: 'Utilisateur',
         phone: '',
         email: '',
         theme: 'light',
@@ -302,30 +327,6 @@ class ShalomDB {
         },
       ];
       await putAll(STORES.MESSAGE_TEMPLATES, templates);
-    }
-
-    if ((await checkCount(STORES.CONTACTS)) === 0) {
-      const initialContacts: Contact[] = [
-        {
-          id: 'c_1',
-          firstName: 'Jean-Marc',
-          lastName: 'Koffi',
-          phone: '+33612345678',
-          category: 'frere_soeur',
-          notes: 'Frère en Christ, temps de prière',
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: 'c_2',
-          firstName: 'Sarah',
-          lastName: 'Bamba',
-          phone: '+33687654321',
-          category: 'intercesseur',
-          notes: 'Partenaire de prière',
-          createdAt: new Date().toISOString(),
-        },
-      ];
-      await putAll(STORES.CONTACTS, initialContacts);
     }
 
     if ((await checkCount(STORES.PRAYERS)) === 0) {
@@ -379,7 +380,7 @@ class ShalomDB {
         id: 'pg_1',
         name: 'Mes partenaires de prière',
         description: 'Personnes de confiance avec qui partager mes sujets.',
-        memberContactIds: ['c_1', 'c_2'],
+        memberContactIds: [],
         prayerIds: [],
         createdAt: new Date().toISOString(),
       };

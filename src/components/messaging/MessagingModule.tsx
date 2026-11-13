@@ -13,8 +13,10 @@ import {
   Smartphone,
   Upload,
   AlertCircle,
+  Plus,
 } from 'lucide-react';
 import { dbService, STORES } from '../../services/db';
+import { pickContactsFromDevice, importContactsFromVcfOrCsv } from '../../services/phoneContacts';
 import { useShalomDB } from '../../hooks/useShalomDB';
 import { Contact, MessageTemplate, ShareHistoryItem } from '../../types';
 
@@ -39,6 +41,9 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
   );
   const [recipientSearch, setRecipientSearch] = useState('');
   const [infoBanner, setInfoBanner] = useState<string | null>(null);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickName, setQuickName] = useState('');
+  const [quickPhone, setQuickPhone] = useState('');
 
   useEffect(() => {
     if (initialContacts && initialContacts.length > 0) {
@@ -120,88 +125,54 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
   };
 
   const handlePickPhoneContacts = async () => {
-    const nav = navigator as unknown as {
-      contacts?: {
-        select: (
-          props: string[],
-          opts: { multiple: boolean }
-        ) => Promise<Array<{ name?: string[]; tel?: string[] }>>;
-      };
-    };
-
-    if (!nav.contacts || typeof nav.contacts.select !== 'function') {
-      setInfoBanner(
-        'Le sélecteur natif du répertoire téléphonique n’est pas disponible sur ce navigateur. Utilisez « Importer .vcf » ou cochez vos contacts ci-dessous.'
-      );
-      return;
-    }
-
-    try {
-      const picked = await nav.contacts.select(['name', 'tel'], { multiple: true });
-      const newIds: string[] = [];
-      for (let i = 0; i < picked.length; i++) {
-        const p = picked[i];
-        const phone = p.tel?.[0]?.trim();
-        if (!phone) continue;
-        const nameParts = (p.name?.[0] || 'Contact').trim().split(' ');
-        const contact: Contact = {
-          id: `c_msg_${Date.now()}_${i}`,
-          firstName: nameParts[0] || 'Contact',
-          lastName: nameParts.slice(1).join(' '),
-          phone,
-          category: 'personnel',
-          createdAt: new Date().toISOString(),
-        };
-        await dbService.put(STORES.CONTACTS, contact);
-        newIds.push(contact.id);
-      }
-      if (newIds.length > 0) {
-        setSelectedIds((prev) => Array.from(new Set([...prev, ...newIds])));
-        setInfoBanner(`${newIds.length} contact(s) ajouté(s) depuis votre téléphone et sélectionné(s).`);
-        reloadData();
-      }
-    } catch {
-      setInfoBanner('Sélection depuis le répertoire téléphonique annulée.');
+    const res = await pickContactsFromDevice(allAvailableContacts);
+    if (res.message) setInfoBanner(res.message);
+    if (res.status === 'success' && res.contacts.length > 0) {
+      const pickedIds = res.contacts.map((c) => c.id);
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...pickedIds])));
+      reloadData();
     }
   };
 
-  const handleImportVcf = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportVcf = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      const text = evt.target?.result as string;
-      if (!text) return;
-      const cards = text.split(/BEGIN:VCARD/i).slice(1);
-      const addedIds: string[] = [];
-      for (let i = 0; i < cards.length; i++) {
-        const card = cards[i];
-        const fnMatch = card.match(/FN(?:;[^:]*)?:(.+)/i);
-        const telMatch = card.match(/TEL(?:;[^:]*)?:(.+)/i);
-        const fullName = fnMatch?.[1]?.trim() || 'Contact';
-        const phone = telMatch?.[1]?.trim();
-        if (phone) {
-          const parts = fullName.split(' ');
-          const contact: Contact = {
-            id: `c_vcf_${Date.now()}_${i}`,
-            firstName: parts[0] || fullName,
-            lastName: parts.slice(1).join(' '),
-            phone,
-            category: 'personnel',
-            createdAt: new Date().toISOString(),
-          };
-          await dbService.put(STORES.CONTACTS, contact);
-          addedIds.push(contact.id);
-        }
-      }
-      if (addedIds.length > 0) {
-        setSelectedIds((prev) => Array.from(new Set([...prev, ...addedIds])));
-        setInfoBanner(`${addedIds.length} contact(s) importé(s) et sélectionné(s).`);
-        reloadData();
-      }
-    };
-    reader.readAsText(file);
+    const { contacts: imported, addedCount } = await importContactsFromVcfOrCsv(
+      file,
+      allAvailableContacts
+    );
+    if (imported.length > 0) {
+      const importedIds = imported.map((c) => c.id);
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...importedIds])));
+      setInfoBanner(
+        `${imported.length} contact(s) sélectionné(s) (${addedCount} nouveau(x) ajouté(s)).`
+      );
+      reloadData();
+    } else {
+      setInfoBanner('Aucun contact valide trouvé dans ce fichier.');
+    }
     e.target.value = '';
+  };
+
+  const handleQuickAddContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickName.trim() || !quickPhone.trim()) return;
+    const parts = quickName.trim().split(/\s+/);
+    const contact: Contact = {
+      id: `c_quick_${Date.now()}`,
+      firstName: parts[0] || quickName.trim(),
+      lastName: parts.slice(1).join(' '),
+      phone: quickPhone.trim(),
+      category: 'personnel',
+      createdAt: new Date().toISOString(),
+    };
+    await dbService.put(STORES.CONTACTS, contact);
+    setSelectedIds((prev) => Array.from(new Set([...prev, contact.id])));
+    setQuickName('');
+    setQuickPhone('');
+    setShowQuickAdd(false);
+    setInfoBanner(`${contact.firstName} ajouté(e) et sélectionné(e).`);
+    reloadData();
   };
 
   const handleSelectTemplate = (tpl: MessageTemplate) => {
@@ -279,16 +250,6 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
             Choisissez vos destinataires dans votre répertoire et envoyez un message personnel avec confirmation manuelle.
           </p>
         </div>
-
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 self-start sm:self-auto"
-          >
-            Fermer
-          </button>
-        )}
       </div>
 
       {infoBanner && (
@@ -407,21 +368,64 @@ export const MessagingModule: React.FC<MessagingModuleProps> = ({
                 3. Destinataires ({targetContacts.length})
               </label>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
                 <button
                   type="button"
                   onClick={handlePickPhoneContacts}
-                  className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1.5"
+                  className="w-full px-3 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition"
                 >
-                  <Smartphone className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Répertoire tél.</span>
+                  <Smartphone className="w-4 h-4" />
+                  <span>Ouvrir le répertoire du téléphone</span>
                 </button>
 
-                <label className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer">
-                  <Upload className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Importer .vcf</span>
-                  <input type="file" accept=".vcf" onChange={handleImportVcf} className="hidden" />
-                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer">
+                    <Upload className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Importer .vcf</span>
+                    <input type="file" accept=".vcf,.csv" onChange={handleImportVcf} className="hidden" />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickAdd((prev) => !prev)}
+                    className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Saisir un numéro</span>
+                  </button>
+                </div>
+
+                {showQuickAdd && (
+                  <form
+                    onSubmit={handleQuickAddContact}
+                    className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2"
+                  >
+                    <input
+                      type="text"
+                      required
+                      placeholder="Nom complet"
+                      value={quickName}
+                      onChange={(e) => setQuickName(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
+                    />
+                    <div className="flex gap-1.5">
+                      <input
+                        type="tel"
+                        required
+                        placeholder="+33 6..."
+                        value={quickPhone}
+                        onChange={(e) => setQuickPhone(e.target.value)}
+                        className="flex-1 px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800"
+                      />
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"
+                      >
+                        OK
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
 
               <div className="space-y-2">

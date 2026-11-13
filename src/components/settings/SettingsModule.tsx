@@ -14,6 +14,10 @@ import {
   Grid3X3,
   Hash,
   Image as ImageIcon,
+  Camera,
+  Trash2,
+  BookOpen,
+  RotateCcw,
 } from 'lucide-react';
 import { dbService, STORES } from '../../services/db';
 import { useShalomDB } from '../../hooks/useShalomDB';
@@ -58,9 +62,12 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
   const [userForm, setUserForm] = useState<UserProfile>({
     id: userProfile?.id || 'user_main',
-    fullName: userProfile?.fullName || 'Mon Espace SHALOM',
+    fullName: userProfile?.fullName || 'Utilisateur',
     phone: userProfile?.phone || '',
     email: userProfile?.email || '',
+    avatarDataUrl: userProfile?.avatarDataUrl || undefined,
+    dashboardVerseText: userProfile?.dashboardVerseText || '',
+    dashboardVerseRef: userProfile?.dashboardVerseRef || '',
     theme: userProfile?.theme || 'light',
     createdAt: userProfile?.createdAt || new Date().toISOString(),
   });
@@ -96,10 +103,45 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
     dbService.getStorageEstimate().then(setStorageStats);
   }, [userProfile]);
 
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const minSide = Math.min(img.width, img.height);
+        const sx = (img.width - minSide) / 2;
+        const sy = (img.height - minSide) / 2;
+        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        setUserForm((prev) => ({ ...prev, avatarDataUrl: dataUrl }));
+      };
+      if (typeof reader.result === 'string') {
+        img.src = reader.result;
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    await dbService.put(STORES.PROFILES, userForm);
-    setSaveNotice('Profil enregistré.');
+    const cleaned: UserProfile = {
+      ...userForm,
+      fullName: userForm.fullName.trim() || 'Utilisateur',
+      dashboardVerseText: userForm.dashboardVerseText?.trim() || '',
+      dashboardVerseRef: userForm.dashboardVerseRef?.trim() || '',
+    };
+    await dbService.put(STORES.PROFILES, cleaned);
+    setUserForm(cleaned);
+    setSaveNotice('Profil et verset d’accueil enregistrés.');
     reloadData();
   };
 
@@ -243,7 +285,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
   };
 
   const handleDownloadLogo = async (format: 'png' | 'jpg') => {
-    const fileName = `shalom_logo_520x520.${format}`;
+    const fileName = `shalom_logo_512x512.${format}`;
     try {
       const response = await fetch(`./${fileName}`);
       const blob = await response.blob();
@@ -312,10 +354,54 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 <span>Mon Profil & Apparence</span>
               </div>
 
+              {/* Photo de profil utilisateur */}
+              <div className="flex items-center gap-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                <div className="w-16 h-16 rounded-full overflow-hidden bg-[#0b1f42] text-white flex items-center justify-center font-bold text-lg shrink-0 border-2 border-amber-400/50">
+                  {userForm.avatarDataUrl ? (
+                    <img
+                      src={userForm.avatarDataUrl}
+                      alt={userForm.fullName || 'Profil'}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span>{(userForm.fullName || 'U').trim().charAt(0).toUpperCase()}</span>
+                  )}
+                </div>
+
+                <div className="flex-1 space-y-2">
+                  <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    Photo de profil
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition">
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>{userForm.avatarDataUrl ? 'Changer la photo' : 'Ajouter une photo'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarChange}
+                        className="hidden"
+                      />
+                    </label>
+                    {userForm.avatarDataUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setUserForm({ ...userForm, avatarDataUrl: undefined })}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Retirer</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div>
-                <label className="block text-xs font-semibold mb-1">Nom ou Prénom</label>
+                <label className="block text-xs font-semibold mb-1">Votre nom complet / prénom</label>
                 <input
                   type="text"
+                  placeholder="Ex: David Kouassi"
                   value={userForm.fullName}
                   onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
@@ -330,6 +416,58 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
                 />
+              </div>
+
+              {/* Verset affiché dans le Dashboard */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-blue-700 dark:text-blue-400">
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Verset affiché à l’Accueil (Dashboard)</span>
+                  </span>
+                  {(userForm.dashboardVerseText || userForm.dashboardVerseRef) && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setUserForm({ ...userForm, dashboardVerseText: '', dashboardVerseRef: '' })
+                      }
+                      className="text-[11px] font-semibold text-slate-500 hover:text-blue-700 flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Verset par défaut</span>
+                    </button>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1">
+                    Texte du verset (collez votre verset ici)
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Collez ici le verset à afficher sur l’écran d’accueil..."
+                    value={userForm.dashboardVerseText || ''}
+                    onChange={(e) =>
+                      setUserForm({ ...userForm, dashboardVerseText: e.target.value })
+                    }
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold mb-1">
+                    Référence (facultatif)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Psaume 23:1"
+                    value={userForm.dashboardVerseRef || ''}
+                    onChange={(e) =>
+                      setUserForm({ ...userForm, dashboardVerseRef: e.target.value })
+                    }
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800"
+                  />
+                </div>
               </div>
 
               <div>
@@ -359,14 +497,14 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
           <div className="p-5 rounded-2xl bg-white dark:bg-[#0c1631] border border-slate-200/80 dark:border-slate-800/80 space-y-4 shadow-xs">
             <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-bold text-xs uppercase tracking-wider">
               <ImageIcon className="w-4 h-4" />
-              <span>Logo officiel SHALOM (520 × 520 px)</span>
+              <span>Logo officiel SHALOM (512 × 512 px)</span>
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-4">
               <div className="w-24 h-24 rounded-2xl overflow-hidden shadow-md border border-slate-200/70 dark:border-slate-700/70 shrink-0 bg-slate-100 dark:bg-slate-900">
                 <img
-                  src="./shalom_logo_520x520.png"
-                  alt="Logo SHALOM 520x520"
+                  src="./shalom_logo_512x512.png"
+                  alt="Logo SHALOM 512x512"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-contain"
                 />
@@ -374,7 +512,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
 
               <div className="space-y-2.5 flex-1 text-center sm:text-left">
                 <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                  Téléchargez le logo en haute netteté <strong>520 × 520 px</strong> pour vos documents, réseaux ou icônes externes.
+                  Téléchargez le logo en haute netteté <strong>512 × 512 px</strong> pour vos documents, réseaux ou icônes externes.
                 </p>
 
                 <div className="flex flex-wrap justify-center sm:justify-start gap-2">
@@ -384,7 +522,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     className="px-3.5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold flex items-center gap-1.5 transition"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>PNG transparent (520×520)</span>
+                    <span>PNG transparent (512×512)</span>
                   </button>
 
                   <button
@@ -393,7 +531,7 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 text-xs font-semibold flex items-center gap-1.5 transition"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>JPG plein cadre (520×520)</span>
+                    <span>JPG plein cadre (512×512)</span>
                   </button>
                 </div>
               </div>
@@ -412,23 +550,13 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                 <span>Protection & Verrouillage au choix</span>
               </div>
               {securityConfig.isEnabled && (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={onLockNow}
-                    className="px-3 py-1.5 rounded-lg bg-blue-700 text-white text-xs font-bold flex items-center gap-1"
-                  >
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>Verrouiller</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDisableSecurity}
-                    className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50"
-                  >
-                    Désactiver
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleDisableSecurity}
+                  className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50"
+                >
+                  Désactiver
+                </button>
               )}
             </div>
 
@@ -582,9 +710,11 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                   <div className="text-center space-y-2">
                     {!patternStep1 ? (
                       <PatternGrid
+                        key="pattern-step-1"
                         label="Étape 1/2 : Tracez votre schéma (min. 4 points)"
                         onPatternComplete={(pat) => {
                           if (pat.split('-').length >= 4) {
+                            setSecurityNotice(null);
                             setPatternStep1(pat);
                           } else {
                             setSecurityNotice('Reliez au moins 4 points.');
@@ -594,20 +724,43 @@ export const SettingsModule: React.FC<SettingsModuleProps> = ({
                     ) : !patternStep2 ? (
                       <div className="space-y-2">
                         <PatternGrid
+                          key="pattern-step-2"
                           label="Étape 2/2 : Confirmez le même schéma"
-                          onPatternComplete={(pat) => setPatternStep2(pat)}
+                          onPatternComplete={(pat) => {
+                            if (pat !== patternStep1) {
+                              setSecurityNotice('Les deux schémas ne correspondent pas. Tracez à nouveau.');
+                              return;
+                            }
+                            setSecurityNotice(null);
+                            setPatternStep2(pat);
+                          }}
                         />
                         <button
                           type="button"
-                          onClick={() => setPatternStep1('')}
+                          onClick={() => {
+                            setPatternStep1('');
+                            setPatternStep2('');
+                          }}
                           className="text-xs text-slate-500 underline"
                         >
                           Recommencer
                         </button>
                       </div>
                     ) : (
-                      <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                        Schéma prêt à être enregistré.
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                          Schéma confirmé et prêt à être enregistré.
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPatternStep1('');
+                            setPatternStep2('');
+                          }}
+                          className="text-xs text-slate-500 underline"
+                        >
+                          Tracer un autre schéma
+                        </button>
                       </div>
                     )}
                   </div>

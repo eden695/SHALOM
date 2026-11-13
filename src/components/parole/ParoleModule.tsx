@@ -16,6 +16,10 @@ import {
   AlertCircle,
   CheckCircle2,
   Plus,
+  SwitchCamera,
+  Camera,
+  X,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { MediaRecordingManager, RecorderState } from '../../services/audioVideoRecorder';
 import { dbService, STORES } from '../../services/db';
@@ -40,8 +44,10 @@ export const ParoleModule: React.FC = () => {
     durationSeconds: 0,
     audioLevel: 0,
     mode: 'audio',
+    facingMode: 'user',
     error: null,
   });
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
 
   const [recordedResult, setRecordedResult] = useState<{
     blob: Blob;
@@ -76,7 +82,16 @@ export const ParoleModule: React.FC = () => {
   // Playback modal
   const [playingParole, setPlayingParole] = useState<RecordedParole | null>(null);
   const [playingBlobUrl, setPlayingBlobUrl] = useState<string | null>(null);
+  const [playingPhotoUrls, setPlayingPhotoUrls] = useState<string[]>([]);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+
+  // Live photos captured while recording a Parole
+  const [capturedPhotos, setCapturedPhotos] = useState<Array<{ blob: Blob; previewUrl: string }>>([]);
+  const [photoFlashNotice, setPhotoFlashNotice] = useState<string | null>(null);
+  const [isAudioPhotoCamOpen, setIsAudioPhotoCamOpen] = useState(false);
+  const [audioPhotoCamFacing, setAudioPhotoCamFacing] = useState<'user' | 'environment'>('environment');
+  const audioPhotoVideoRef = useRef<HTMLVideoElement | null>(null);
+  const audioPhotoStreamRef = useRef<MediaStream | null>(null);
 
   // Delete modal
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -112,10 +127,27 @@ export const ParoleModule: React.FC = () => {
     return `${mins.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const stopAudioPhotoCam = () => {
+    if (audioPhotoStreamRef.current) {
+      audioPhotoStreamRef.current.getTracks().forEach((t) => t.stop());
+      audioPhotoStreamRef.current = null;
+    }
+    if (audioPhotoVideoRef.current) {
+      audioPhotoVideoRef.current.srcObject = null;
+    }
+    setIsAudioPhotoCamOpen(false);
+  };
+
   const resetFormAndPreview = () => {
+    stopAudioPhotoCam();
     if (recordedResult?.previewUrl) {
       URL.revokeObjectURL(recordedResult.previewUrl);
     }
+    setCapturedPhotos((prev) => {
+      prev.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+      return [];
+    });
+    setPhotoFlashNotice(null);
     setRecordedResult(null);
     setSaveError(null);
     setFormData({
@@ -156,6 +188,105 @@ export const ParoleModule: React.FC = () => {
     } else {
       recorderManagerRef.current.pause();
     }
+  };
+
+  const handleSwitchCamera = async () => {
+    if (!recorderManagerRef.current || isSwitchingCamera) return;
+    setSaveError(null);
+    if (!recorderState.isRecording) {
+      setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
+      return;
+    }
+    setIsSwitchingCamera(true);
+    try {
+      const nextFacing = await recorderManagerRef.current.switchCamera();
+      setFacingMode(nextFacing);
+    } catch (err: unknown) {
+      setSaveError(
+        err instanceof Error ? err.message : "Impossible de changer de caméra sur cet appareil."
+      );
+    } finally {
+      setIsSwitchingCamera(false);
+    }
+  };
+
+  const showPhotoCapturedFeedback = () => {
+    setPhotoFlashNotice('Photo enregistrée !');
+    setTimeout(() => setPhotoFlashNotice(null), 1600);
+  };
+
+  const handleOpenAudioPhotoCam = async (facing: 'user' | 'environment' = audioPhotoCamFacing) => {
+    if (!recorderManagerRef.current) return;
+    setSaveError(null);
+    try {
+      if (audioPhotoStreamRef.current) {
+        audioPhotoStreamRef.current.getTracks().forEach((t) => t.stop());
+        audioPhotoStreamRef.current = null;
+      }
+      const stream = await recorderManagerRef.current.acquireVideoCameraStream(facing);
+      audioPhotoStreamRef.current = stream;
+      setIsAudioPhotoCamOpen(true);
+      setTimeout(() => {
+        if (audioPhotoVideoRef.current) {
+          audioPhotoVideoRef.current.srcObject = stream;
+          audioPhotoVideoRef.current.muted = true;
+          audioPhotoVideoRef.current.play().catch(() => {});
+        }
+      }, 60);
+    } catch {
+      setSaveError("Impossible d'ouvrir l'appareil photo pendant cet enregistrement.");
+    }
+  };
+
+  const handleCapturePhotoDuringRecording = async () => {
+    setSaveError(null);
+    if (captureMethod === 'video' && recorderState.isRecording && recorderManagerRef.current) {
+      const blob = await recorderManagerRef.current.capturePhotoFromActiveVideo();
+      if (blob && blob.size > 0) {
+        const previewUrl = URL.createObjectURL(blob);
+        setCapturedPhotos((prev) => [...prev, { blob, previewUrl }]);
+        showPhotoCapturedFeedback();
+      } else {
+        setSaveError('Caméra en cours de chargement, réessayez dans une seconde.');
+      }
+      return;
+    }
+
+    if (isAudioPhotoCamOpen) {
+      const blob = await MediaRecordingManager.capturePhotoFromVideoElement(audioPhotoVideoRef.current);
+      if (blob && blob.size > 0) {
+        const previewUrl = URL.createObjectURL(blob);
+        setCapturedPhotos((prev) => [...prev, { blob, previewUrl }]);
+        showPhotoCapturedFeedback();
+      }
+      return;
+    }
+
+    await handleOpenAudioPhotoCam(audioPhotoCamFacing);
+  };
+
+  const handleImportPhotoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const added: Array<{ blob: Blob; previewUrl: string }> = [];
+    Array.from(files).forEach((f) => {
+      if (f.type.startsWith('image/')) {
+        added.push({ blob: f, previewUrl: URL.createObjectURL(f) });
+      }
+    });
+    if (added.length > 0) {
+      setCapturedPhotos((prev) => [...prev, ...added]);
+      showPhotoCapturedFeedback();
+    }
+    e.target.value = '';
+  };
+
+  const handleRemoveCapturedPhoto = (idx: number) => {
+    setCapturedPhotos((prev) => {
+      const target = prev[idx];
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((_, i) => i !== idx);
+    });
   };
 
   const handleStopRecording = async () => {
@@ -264,6 +395,15 @@ export const ParoleModule: React.FC = () => {
       const blobKey = `blob_${id}`;
       await dbService.saveMediaBlob(blobKey, finalResult.blob, finalResult.mimeType);
 
+      // Save any photos captured during the recording
+      const photoBlobKeys: string[] = [];
+      for (let i = 0; i < capturedPhotos.length; i++) {
+        const p = capturedPhotos[i];
+        const pKey = `photo_${id}_${i}`;
+        await dbService.saveMediaBlob(pKey, p.blob, p.blob.type || 'image/jpeg');
+        photoBlobKeys.push(pKey);
+      }
+
       const sizeKB = finalResult.blob.size / 1024;
       const sizeFormatted =
         sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} Mo` : `${Math.max(1, Math.round(sizeKB))} Ko`;
@@ -282,6 +422,7 @@ export const ParoleModule: React.FC = () => {
         mediaType: finalResult.mediaType,
         mimeType: finalResult.mimeType,
         blobKey,
+        photoBlobKeys: photoBlobKeys.length > 0 ? photoBlobKeys : undefined,
         fileSizeFormatted: sizeFormatted,
         createdAt: new Date().toISOString(),
       };
@@ -306,7 +447,27 @@ export const ParoleModule: React.FC = () => {
       URL.revokeObjectURL(playingBlobUrl);
       setPlayingBlobUrl(null);
     }
+    setPlayingPhotoUrls((prev) => {
+      prev.forEach((u) => URL.revokeObjectURL(u));
+      return [];
+    });
     setPlayingParole(parole);
+
+    // Load captured photos if present
+    if (parole.photoBlobKeys && parole.photoBlobKeys.length > 0) {
+      const urls: string[] = [];
+      for (const pKey of parole.photoBlobKeys) {
+        try {
+          const pBlob = await dbService.getMediaBlob(pKey);
+          if (pBlob && pBlob.size > 0) {
+            urls.push(URL.createObjectURL(pBlob));
+          }
+        } catch {
+          // ignore missing photo
+        }
+      }
+      setPlayingPhotoUrls(urls);
+    }
 
     if (!parole.blobKey) {
       setPlaybackError('Aucun fichier audio ou vidéo associé à cette fiche.');
@@ -343,6 +504,11 @@ export const ParoleModule: React.FC = () => {
     const item = recordings.find((r) => r.id === deletingId);
     if (item && item.blobKey) {
       await dbService.deleteItem(STORES.MEDIA_BLOBS, item.blobKey);
+    }
+    if (item?.photoBlobKeys) {
+      for (const pKey of item.photoBlobKeys) {
+        await dbService.deleteItem(STORES.MEDIA_BLOBS, pKey);
+      }
     }
     await dbService.deleteItem(STORES.RECORDINGS, deletingId);
     setDeletingId(null);
@@ -501,6 +667,14 @@ export const ParoleModule: React.FC = () => {
                       {parole.bibleVerse}
                     </p>
                   )}
+                  {parole.photoBlobKeys && parole.photoBlobKeys.length > 0 && (
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>
+                        {parole.photoBlobKeys.length} photo{parole.photoBlobKeys.length > 1 ? 's' : ''} jointe{parole.photoBlobKeys.length > 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  )}
                   {parole.notes && (
                     <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 pt-1">
                       {parole.notes}
@@ -545,18 +719,8 @@ export const ParoleModule: React.FC = () => {
               Aucune parole enregistrée pour le moment
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-              Enregistrez un message audio ou vidéo directement avec votre micro/caméra ou importez un fichier depuis votre appareil.
+              Cliquez sur « Nouvelle Parole » ci-dessus pour enregistrer un audio, une vidéo ou prendre des photos.
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                resetFormAndPreview();
-                setIsRecordingModalOpen(true);
-              }}
-              className="mt-4 px-4 py-2 rounded-xl bg-blue-700 text-white text-xs font-bold"
-            >
-              Enregistrer une première parole
-            </button>
           </div>
         )}
       </div>
@@ -614,15 +778,37 @@ export const ParoleModule: React.FC = () => {
           {/* Capture Studio Panel */}
           <div className="p-5 rounded-2xl bg-[#0b1736] text-white flex flex-col items-center justify-center min-h-[190px] relative overflow-hidden">
             {captureMethod === 'video' && (
-              <video
-                ref={videoPreviewRef}
-                autoPlay
-                playsInline
-                muted
-                className={`w-full max-h-48 object-cover rounded-xl mb-3 ${
+              <div
+                className={`relative w-full mb-3 ${
                   recorderState.isRecording ? 'block' : 'hidden'
                 }`}
-              />
+              >
+                <video
+                  ref={videoPreviewRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full max-h-56 object-cover rounded-xl bg-black"
+                />
+                {recorderState.isRecording && (
+                  <button
+                    type="button"
+                    onClick={handleSwitchCamera}
+                    disabled={isSwitchingCamera}
+                    className="absolute top-2.5 right-2.5 px-3 py-1.5 rounded-full bg-slate-950/75 hover:bg-slate-900 backdrop-blur-xs border border-white/20 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-md transition disabled:opacity-50"
+                    title="Basculer entre caméra avant et arrière"
+                  >
+                    <SwitchCamera className="w-3.5 h-3.5 text-amber-300" />
+                    <span>
+                      {isSwitchingCamera
+                        ? 'Basculement...'
+                        : facingMode === 'user'
+                        ? 'Caméra avant · Basculer'
+                        : 'Caméra arrière · Basculer'}
+                    </span>
+                  </button>
+                )}
+              </div>
             )}
 
             {recorderState.isRecording ? (
@@ -652,25 +838,74 @@ export const ParoleModule: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-center gap-3 pt-2">
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
                   <button
                     type="button"
                     onClick={handlePauseResume}
-                    className="p-3 rounded-full bg-slate-800 hover:bg-slate-700 text-white transition"
+                    className="p-2.5 rounded-full bg-slate-800 hover:bg-slate-700 text-white transition"
                     title={recorderState.isPaused ? 'Reprendre' : 'Pause'}
                   >
-                    {recorderState.isPaused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
+                    {recorderState.isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCapturePhotoDuringRecording}
+                    className="px-3.5 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition shadow-xs"
+                    title="Prendre une photo pendant l'enregistrement"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>{captureMethod === 'mic' && isAudioPhotoCamOpen ? 'Capturer photo' : 'Prendre photo'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={handleStopRecording}
-                    className="px-5 py-2.5 rounded-full bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-2 transition"
+                    className="px-4 py-2.5 rounded-full bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-1.5 transition"
                   >
-                    <Square className="w-4 h-4 fill-current" />
-                    <span>Terminer & Pré-écouter</span>
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                    <span>Terminer</span>
                   </button>
                 </div>
+
+                {photoFlashNotice && (
+                  <div className="text-[11px] font-bold text-emerald-300 animate-pulse">
+                    {photoFlashNotice}
+                  </div>
+                )}
+
+                {captureMethod === 'mic' && isAudioPhotoCamOpen && (
+                  <div className="mt-3 p-2 rounded-xl bg-slate-900/90 border border-white/15 space-y-2">
+                    <div className="relative">
+                      <video
+                        ref={audioPhotoVideoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full max-h-44 object-cover rounded-lg bg-black"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = audioPhotoCamFacing === 'user' ? 'environment' : 'user';
+                          setAudioPhotoCamFacing(next);
+                          handleOpenAudioPhotoCam(next);
+                        }}
+                        className="absolute top-2 right-2 px-2.5 py-1 rounded-full bg-slate-950/75 text-white text-[10px] font-bold flex items-center gap-1 border border-white/20"
+                      >
+                        <SwitchCamera className="w-3 h-3 text-amber-300" />
+                        <span>{audioPhotoCamFacing === 'user' ? 'Avant' : 'Arrière'}</span>
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={stopAudioPhotoCam}
+                      className="text-[11px] text-slate-300 hover:text-white underline"
+                    >
+                      Masquer la caméra photo
+                    </button>
+                  </div>
+                )}
               </div>
             ) : recordedResult ? (
               <div className="space-y-3 text-center w-full max-w-sm">
@@ -756,6 +991,54 @@ export const ParoleModule: React.FC = () => {
                   <span>Démarrer l’enregistrement</span>
                 </button>
               </div>
+            )}
+          </div>
+
+          {/* Captured Photos Strip (visible whenever photos have been captured or user wants to attach an image) */}
+          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                <Camera className="w-3.5 h-3.5 text-amber-500" />
+                <span>Photos associées ({capturedPhotos.length})</span>
+              </span>
+
+              <label className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-blue-700 dark:text-blue-400 cursor-pointer flex items-center gap-1">
+                <ImageIcon className="w-3 h-3" />
+                <span>Ajouter une image</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImportPhotoFile}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            {capturedPhotos.length > 0 ? (
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                {capturedPhotos.map((photo, idx) => (
+                  <div key={photo.previewUrl} className="relative group rounded-lg overflow-hidden aspect-square bg-black border border-slate-200 dark:border-slate-700">
+                    <img
+                      src={photo.previewUrl}
+                      alt={`Capture ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCapturedPhoto(idx)}
+                      aria-label="Retirer cette photo"
+                      className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-sm"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Pendant l’enregistrement audio ou vidéo, cliquez sur « Prendre photo » à tout moment pour capturer l’instant.
+              </p>
             )}
           </div>
 
@@ -899,6 +1182,10 @@ export const ParoleModule: React.FC = () => {
             setPlayingParole(null);
             if (playingBlobUrl) URL.revokeObjectURL(playingBlobUrl);
             setPlayingBlobUrl(null);
+            setPlayingPhotoUrls((prev) => {
+              prev.forEach((u) => URL.revokeObjectURL(u));
+              return [];
+            });
           }}
           title={playingParole.title}
           subtitle={`Par ${playingParole.speaker} · ${playingParole.date}`}
@@ -930,6 +1217,33 @@ export const ParoleModule: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {playingPhotoUrls.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Photos prises pendant l’enregistrement ({playingPhotoUrls.length})</span>
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {playingPhotoUrls.map((url, idx) => (
+                    <div
+                      key={url}
+                      className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black aspect-video group"
+                    >
+                      <img src={url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                      <a
+                        href={url}
+                        download={`${playingParole.title.replace(/[^a-z0-9]/gi, '_')}_photo_${idx + 1}.jpg`}
+                        className="absolute bottom-1.5 right-1.5 px-2 py-1 rounded-lg bg-slate-950/75 text-white text-[10px] font-bold flex items-center gap-1"
+                      >
+                        <Download className="w-3 h-3" />
+                        <span>JPG</span>
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
               {playingParole.bibleVerse && (
@@ -964,6 +1278,10 @@ export const ParoleModule: React.FC = () => {
                   setPlayingParole(null);
                   if (playingBlobUrl) URL.revokeObjectURL(playingBlobUrl);
                   setPlayingBlobUrl(null);
+                  setPlayingPhotoUrls((prev) => {
+                    prev.forEach((u) => URL.revokeObjectURL(u));
+                    return [];
+                  });
                 }}
                 className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 rounded-xl"
               >
