@@ -1,0 +1,112 @@
+import React from 'react';
+import {
+  Home,
+  HeartHandshake,
+  Mic,
+  Calendar,
+  Users,
+  MessageSquare,
+  Settings,
+  Lock,
+} from 'lucide-react';
+import { LockableFeatureId } from '../../types';
+
+interface SidebarProps {
+  userName?: string;
+  activeTab: string;
+  onSelectTab: (tab: string) => void;
+  lockedFeatures: LockableFeatureId[];
+}
+
+export interface NavItem {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  lockId?: LockableFeatureId;
+}
+
+export const NAV_ITEMS: NavItem[] = [
+  { id: 'dashboard', label: 'Accueil', icon: Home },
+  { id: 'prayers', label: 'Mes Prières', icon: HeartHandshake, lockId: 'prayers' },
+  { id: 'parole', label: 'Parole Divine', icon: Mic, lockId: 'parole' },
+  { id: 'calendar', label: 'Mon Calendrier', icon: Calendar, lockId: 'calendar' },
+  { id: 'contacts', label: 'Mes Contacts', icon: Users, lockId: 'contacts' },
+  { id: 'messaging', label: 'Partage WhatsApp / SMS', icon: MessageSquare, lockId: 'messaging' },
+  { id: 'settings', label: 'Paramètres', icon: Settings, lockId: 'settings' },
+];
+
+export const Sidebar: React.FC<SidebarProps> = ({
+  userName,
+  activeTab,
+  onSelectTab,
+  lockedFeatures,
+}) => {
+  return (
+    <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:shrink-0 bg-white dark:bg-[#091229] border-r border-slate-200/80 dark:border-slate-800/80 h-screen sticky top-0 select-none">
+      {/* Brand Block */}
+      <div className="px-5 py-5 border-b border-slate-100 dark:border-slate-800/80">
+        <div
+          onClick={() => onSelectTab('dashboard')}
+          className="flex items-center gap-3 cursor-pointer"
+        >
+          <div className="w-10 h-10 rounded-xl overflow-hidden border border-amber-400/40 bg-[#0b1f42] shrink-0 shadow-xs">
+            <img
+              src="/shalom_logo.jpg"
+              alt="SHALOM"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover scale-[1.06]"
+            />
+          </div>
+          <div className="min-w-0">
+            <span className="text-lg font-extrabold tracking-tight text-[#0b1f42] dark:text-white font-display block leading-none">
+              SHALOM
+            </span>
+            <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block truncate mt-1">
+              {userName || 'Mon Espace Personnel'}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-3 text-[11px] font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+          <span>Compagnon Spirituel</span>
+          <span aria-hidden="true">·</span>
+          <span className="text-slate-400 font-normal">Jean 14:27</span>
+        </div>
+      </div>
+
+      {/* Navigation Links */}
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          const isLocked = item.lockId ? lockedFeatures.includes(item.lockId) : false;
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onSelectTab(item.id)}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-[13px] font-medium transition-colors ${
+                isActive
+                  ? 'bg-[#0b1f42] text-white dark:bg-blue-700 dark:text-white font-semibold shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span className="flex items-center gap-2.5 truncate">
+                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-amber-300' : 'text-slate-400'}`} />
+                <span className="truncate">{item.label}</span>
+              </span>
+              {isLocked && (
+                <Lock className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-200' : 'text-slate-400'}`} />
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="px-5 py-3.5 border-t border-slate-100 dark:border-slate-800/80 text-[11px] text-slate-400 dark:text-slate-500">
+        <p className="italic">La foi au quotidien, la paix dans le cœur.</p>
+      </div>
+    </aside>
+  );
+};

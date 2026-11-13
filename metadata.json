@@ -1,0 +1,9 @@
+{
+  "name": "SHALOM - Plateforme Chrétienne",
+  "description": "La foi au quotidien, la paix dans la communion. Plateforme chrétienne complète pour la vie spirituelle personnelle et l'organisation de l'église.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
